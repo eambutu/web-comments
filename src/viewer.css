@@ -1,0 +1,14 @@
+:root { font: 15px system-ui,sans-serif; background:#19252d; color:#e7eef1; }
+body { margin:0; }
+header { position:sticky; top:0; z-index:10; display:flex; align-items:center; flex-wrap:wrap; gap:1rem; padding:.8rem 1.3rem; background:#10232c; }
+a { color:#91dfdb; }
+button { padding:.5rem .65rem; border-radius:6px; cursor:pointer; }
+#status { margin:0; }
+#pages { display:grid; gap:1rem; padding:1rem; overflow-x:auto; }
+.sheet { position:relative; background:white; color:black; margin:auto; box-shadow:0 3px 15px #10161b; }
+.sheet canvas, .textLayer, .markers { position:absolute; inset:0; }
+.textLayer { overflow:clip; opacity:1; line-height:1; text-align:initial; text-size-adjust:none; transform-origin:0 0; forced-color-adjust:none; }
+.textLayer :is(span,br) { position:absolute; color:transparent; white-space:pre; cursor:text; transform-origin:0 0; }
+.textLayer ::selection { background:#5e9bea75; }
+.markers { pointer-events:none; }
+.marker { position:absolute; background:#ffc72c55; mix-blend-mode:multiply; border-radius:2px; }

@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Web Comments",
+  "version": "1.0.0",
+  "minimum_chrome_version": "120",
+  "description": "Private, threaded annotations on webpages and PDFs.",
+  "permissions": ["sidePanel","storage","tabs","clipboardWrite"],
+  "host_permissions": ["http://*/*","https://*/*","file:///*"],
+  "action": {"default_title":"Open Web Comments"},
+  "background": {"service_worker":"background.js"},
+  "side_panel": {"default_path":"panel.html"},
+  "content_scripts": [{
+    "matches":["http://*/*","https://*/*"],
+    "js":["content.js"],
+    "css":["content.css"],
+    "run_at":"document_idle"
+  }]
+}
