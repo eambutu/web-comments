@@ -18,7 +18,7 @@ const supabaseUrl = new URL(env('SUPABASE_URL')).origin;
 const publishableKey = env('SUPABASE_PUBLISHABLE_KEY');
 const configuredOwner = process.env.OWNER_USER_ID?.toLowerCase();
 const clientId = process.env.MCP_OAUTH_CLIENT_ID || null;
-const pool = new pg.Pool({ connectionString: env('DATABASE_URL') });
+const pool = new pg.Pool({ connectionString: env('DATABASE_URL'), connectionTimeoutMillis:5000 });
 const setupCode = process.env.WEB_COMMENTS_SETUP_CODE;
 const secretKey = process.env.SUPABASE_SECRET_KEY;
 const authOptions = {persistSession:false,autoRefreshToken:false};
@@ -49,7 +49,15 @@ const metadata = {
   bearer_methods_supported: ['header'],
 };
 app.get(['/.well-known/oauth-protected-resource', '/.well-known/oauth-protected-resource/mcp'], (_req,res) => res.json(metadata));
-app.get('/healthz', (_req,res) => res.json({ok:true}));
+app.get('/healthz', async (_req,res) => {
+  try {
+    if (configuredOwner) await pool.query('select 1');
+    else await enrollment();
+    res.json({ok:true});
+  } catch {
+    res.status(503).json({ok:false});
+  }
+});
 app.get('/config.json', async (_req,res) => {
   res.set('Cache-Control','no-store');
   const setupAvailable = Boolean(admin && !await enrollment());
