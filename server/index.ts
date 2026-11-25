@@ -18,7 +18,8 @@ const supabaseUrl = new URL(env('SUPABASE_URL')).origin;
 const publishableKey = env('SUPABASE_PUBLISHABLE_KEY');
 const configuredOwner = process.env.OWNER_USER_ID?.toLowerCase();
 const clientId = process.env.MCP_OAUTH_CLIENT_ID || null;
-const pool = new pg.Pool({ connectionString: env('DATABASE_URL'), connectionTimeoutMillis:5000 });
+const databaseUrl = env('DATABASE_URL');
+const pool = new pg.Pool({ connectionString:databaseUrl, connectionTimeoutMillis:5000 });
 const setupCode = process.env.WEB_COMMENTS_SETUP_CODE;
 const secretKey = process.env.SUPABASE_SECRET_KEY;
 const authOptions = {persistSession:false,autoRefreshToken:false};
@@ -57,8 +58,10 @@ app.get('/healthz', async (_req,res) => {
     res.json({ok:true});
   } catch (error) {
     const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
-    const tenantMissing = error instanceof Error && /tenant or user not found/i.test(error.message);
-    console.warn('Database readiness check failed',tenantMissing ? 'pooler tenant or user not found' : code ?? 'connection failed');
+    const detail = error instanceof Error
+      ? error.message.replaceAll(databaseUrl,'[redacted]').replace(/postgres(?:ql)?:\/\/[^\s]+|[a-f0-9]{64}/gi,'[redacted]').slice(0,180)
+      : 'connection failed';
+    console.warn('Database readiness check failed',code ?? '',detail);
     res.status(503).json({ok:false});
   }
 });
