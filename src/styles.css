@@ -7,6 +7,9 @@ h2 { font-size:1.02rem; line-height:1.35; overflow-wrap:anywhere; }
 .shell { display:grid; align-content:start; gap:.8rem; padding:1rem; }
 .web-shell { max-width:540px; margin:8vh auto; padding:1.5rem; }
 .web-shell h1 { font-size:1.7rem; }
+.web-shell ol { margin:.25rem 0; padding-left:1.4rem; }
+.web-shell li + li { margin-top:.35rem; }
+.web-shell .download { justify-self:start; border-radius:6px; padding:.5rem .75rem; color:#fff; background:#17655e; font-weight:620; }
 .brand { display:flex; align-items:center; gap:.6rem; padding-bottom:.7rem; border-bottom:1px solid #ccd9d8; }
 .brand > span { background:#173c3e; color:#f4fffe; padding:.3rem .4rem; border-radius:7px; font-size:.78rem; font-weight:750; }
 .brand > button { margin-left:auto; }

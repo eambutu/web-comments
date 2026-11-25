@@ -7,20 +7,26 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 import './styles.css';
-import { errorText, extensionClient, loadConfig, saveCapture, type Config } from './client';
+import { createOwnerAccount, errorText, extensionClient, loadConfig, saveCapture, type Config } from './client';
 import type { Capture, Message, Thread } from './model';
 
 function App() {
   const [config,setConfig] = useState<Config|null>(null);
   const [session,setSession] = useState<Session|null>(null);
   const [loaded,setLoaded] = useState(false);
+  const [register,setRegister] = useState(false);
   const [busy,setBusy] = useState(false);
   const [status,setStatus] = useState('');
   const db = useMemo(() => config ? extensionClient(config) : null,[config]);
-  useEffect(() => { void chrome.storage.local.get('wcConfig').then(result => {
-    setConfig((result.wcConfig as Config | undefined) ?? null);
-    if (!result.wcConfig) setLoaded(true);
-  }); },[]);
+  useEffect(() => {
+    void chrome.storage.local.get('wcConfig').then(async result => {
+      const saved = result.wcConfig as Config|undefined;
+      if (!saved) { setLoaded(true); return; }
+      const current = await loadConfig(saved.origin).catch(() => saved);
+      setConfig(current);
+      if (current !== saved) await chrome.storage.local.set({wcConfig:current});
+    }).catch(error => { setStatus(errorText(error)); setLoaded(true); });
+  },[]);
   useEffect(() => {
     if (!db) return;
     const {data:{subscription}} = db.auth.onAuthStateChange((_event,current) => {
@@ -38,14 +44,24 @@ function App() {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     void act(async () => {
-      if (!db) {
+      if (!db || !config) {
         const next = await loadConfig(String(form.get('server')));
         await chrome.storage.local.set({wcConfig:next});
         setConfig(next);
+        setRegister(Boolean(next.setupAvailable));
         return;
       }
-      const {error} = await db.auth.signInWithPassword({email:String(form.get('email')),password:String(form.get('password'))});
+      const email = String(form.get('email')).trim().toLowerCase();
+      const password = String(form.get('password'));
+      if (register) await createOwnerAccount(config,email,password,String(form.get('code')));
+      const {error} = await db.auth.signInWithPassword({email,password});
       if (error) throw error;
+      if (register) {
+        setRegister(false);
+        const enrolled = {...config,setupAvailable:false};
+        await chrome.storage.local.set({wcConfig:enrolled});
+        setConfig(enrolled);
+      }
     });
   }
   return <main className="shell">
@@ -55,15 +71,21 @@ function App() {
     })}>Sign out</button>}</header>
     {!loaded ? <p>Loading…</p> : db && session && config
       ? <Workspace db={db} owner={session.user.id} origin={config.origin}/>
-      : <form onSubmit={submit} className="card stack">
-        <h2>{db ? 'Sign in' : 'Connect your server'}</h2>
+      : <form key={db ? String(register) : 'server'} onSubmit={submit} className="card stack">
+        <h2>{db ? register ? 'Create your account' : 'Sign in' : 'Connect your server'}</h2>
         {db ? <><label>Email<input name="email" type="email" required autoComplete="username"/></label>
-          <label>Password<input name="password" type="password" required autoComplete="current-password"/></label></>
+          <label>Password<input name="password" type="password" required minLength={register ? 12 : undefined}
+            autoComplete={register ? 'new-password' : 'current-password'}/></label>
+          {register && <label>One-time setup code<input name="code" type="password" required autoComplete="off"/></label>}</>
           : <label>Server address<input name="server" type="url" placeholder="https://…" required /></label>}
-        <button className="primary" disabled={busy}>{busy ? 'Working…' : db ? 'Sign in' : 'Connect'}</button>
-        {db && <button type="button" className="subtle" onClick={() => void act(async () => {
-          await chrome.storage.local.remove('wcConfig');setConfig(null);
-        })}>Change server</button>}
+        <button className="primary" disabled={busy}>{busy ? 'Working…' : db ? register ? 'Create account' : 'Sign in' : 'Connect'}</button>
+        {db && <div className="actions">
+          {(register || config?.setupAvailable) && <button type="button" className="subtle" disabled={busy}
+            onClick={() => { setStatus(''); setRegister(!register); }}>{register ? 'Use existing account' : 'Create account'}</button>}
+          <button type="button" className="subtle" disabled={busy} onClick={() => void act(async () => {
+            await chrome.storage.local.remove('wcConfig');setConfig(null);setRegister(false);
+          })}>Change server</button>
+        </div>}
       </form>}
     {status && <p className="status" role="status">{status}</p>}
   </main>;

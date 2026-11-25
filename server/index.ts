@@ -1,5 +1,6 @@
 import express from 'express';
 import pg from 'pg';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { createClient } from '@supabase/supabase-js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -12,12 +13,32 @@ function env(key: string) {
   if (!value) throw new Error(`Set ${key} before starting Web Comments.`);
   return value;
 }
-const origin = new URL(env('PUBLIC_ORIGIN')).origin;
+const origin = new URL(process.env.PUBLIC_ORIGIN || process.env.RENDER_EXTERNAL_URL || env('PUBLIC_ORIGIN')).origin;
 const supabaseUrl = new URL(env('SUPABASE_URL')).origin;
 const publishableKey = env('SUPABASE_PUBLISHABLE_KEY');
-const ownerId = env('OWNER_USER_ID').toLowerCase();
-const clientId = env('MCP_OAUTH_CLIENT_ID');
+const configuredOwner = process.env.OWNER_USER_ID?.toLowerCase();
+const clientId = process.env.MCP_OAUTH_CLIENT_ID || null;
 const pool = new pg.Pool({ connectionString: env('DATABASE_URL') });
+const setupCode = process.env.WEB_COMMENTS_SETUP_CODE;
+const secretKey = process.env.SUPABASE_SECRET_KEY;
+const authOptions = {persistSession:false,autoRefreshToken:false};
+if (setupCode && setupCode.length < 32) throw new Error('Use a random WEB_COMMENTS_SETUP_CODE of at least 32 characters.');
+const admin = !configuredOwner && setupCode && secretKey
+  ? createClient(supabaseUrl,secretKey,{auth:authOptions})
+  : null;
+const digest = (value:string) => createHash('sha256').update(value).digest();
+const setupCodeHash = admin && setupCode ? digest(setupCode) : null;
+const setupInput = z.object({
+  email:z.string().trim().toLowerCase().email().max(254),
+  password:z.string().min(12).refine(value => Buffer.byteLength(value,'utf8') <= 72),
+  code:z.string().trim().max(256),
+});
+
+async function enrollment() {
+  const {rows:[row]} = await pool.query<{user_id:string|null}>('select user_id from wc_private.owner_account');
+  return row;
+}
+
 const app = express();
 app.disable('x-powered-by');
 app.use(express.json({limit:'256kb'}));
@@ -29,8 +50,49 @@ const metadata = {
 };
 app.get(['/.well-known/oauth-protected-resource', '/.well-known/oauth-protected-resource/mcp'], (_req,res) => res.json(metadata));
 app.get('/healthz', (_req,res) => res.json({ok:true}));
-app.get('/config.json', (_req,res) => res.json({supabaseUrl,publishableKey,origin,clientId}));
+app.get('/config.json', async (_req,res) => {
+  res.set('Cache-Control','no-store');
+  const setupAvailable = Boolean(admin && !await enrollment());
+  res.json({supabaseUrl,publishableKey,origin,clientId,setupAvailable});
+});
+app.post('/setup/account', async (req,res) => {
+  res.set('Cache-Control','no-store');
+  if (!admin || !setupCodeHash) {
+    res.status(404).json({error:'Account setup is unavailable.'});
+    return;
+  }
+  const input = setupInput.safeParse(req.body);
+  if (!input.success) {
+    res.status(400).json({error:'Enter a valid email and a password of at least 12 characters and at most 72 bytes.'});
+    return;
+  }
+  if (!timingSafeEqual(digest(input.data.code),setupCodeHash)) {
+    res.status(403).json({error:'The setup code is incorrect.'});
+    return;
+  }
+  if (await enrollment()) {
+    res.status(409).json({error:'Account setup is already complete. Sign in with your Web Comments account.'});
+    return;
+  }
+  const {email,password} = input.data;
+  const {error} = await admin.auth.admin.createUser({
+    email,password,email_confirm:true,app_metadata:{web_comments_owner:true},
+  });
+  if (error) {
+    if (await enrollment()) {
+      res.status(409).json({error:'Account setup is already complete. Sign in with your Web Comments account.'});
+      return;
+    }
+    console.error('Supabase account setup failed',error.code,error.status);
+    res.status(422).json({error:'Could not create the account. Check the email and password, or try signing in if the account already exists.'});
+    return;
+  }
+  res.status(201).json({ok:true});
+});
 app.use('/assets', express.static(fileURLToPath(new URL('./web/assets/',import.meta.url))));
+app.get('/downloads/chrome-extension.zip', (_req,res) => {
+  res.download(fileURLToPath(new URL('./web/chrome-extension.zip',import.meta.url)),'web-comments-chrome-extension.zip');
+});
 app.get(['/oauth/consent','/p/:id','/'], (_req,res) => {
   res.set('Content-Security-Policy', `default-src 'none'; script-src 'self'; style-src 'self'; connect-src ${supabaseUrl} 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`);
   res.set('Referrer-Policy','no-referrer');
@@ -38,17 +100,22 @@ app.get(['/oauth/consent','/p/:id','/'], (_req,res) => {
 });
 
 app.all('/mcp', async (req,res) => {
+  if (!clientId) {
+    res.status(503).json({error:'The ChatGPT OAuth connection has not been configured.'});
+    return;
+  }
   const token = req.get('authorization')?.match(/^Bearer (\S+)$/i)?.[1];
   const supabase = createClient(supabaseUrl,publishableKey,{
-    auth:{persistSession:false,autoRefreshToken:false},
+    auth:authOptions,
     global:{headers:{Authorization:`Bearer ${token ?? ''}`}},
   });
   const auth = token ? await supabase.auth.getClaims(token) : null;
   const claims = auth?.data?.claims;
   const user = claims && token && claims.client_id === clientId ? (await supabase.auth.getUser(token)).data.user : null;
-  if (!user || user.id.toLowerCase() !== ownerId || claims?.client_id !== clientId
+  if (!user || claims?.client_id !== clientId
       || claims?.iss !== supabaseUrl + '/auth/v1' || claims?.role !== 'authenticated'
-      || claims?.aud !== 'authenticated' || claims?.sub !== user.id) {
+      || claims?.aud !== 'authenticated' || claims?.sub !== user.id
+      || user.id.toLowerCase() !== (configuredOwner || (await enrollment())?.user_id)) {
     res.set('WWW-Authenticate', `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource/mcp"`);
     res.status(401).json({error:'A Web Comments OAuth token for the configured owner and client is required.'});
     return;
@@ -101,4 +168,8 @@ app.all('/mcp', async (req,res) => {
   await server.connect(transport);
   await transport.handleRequest(req,res,req.body);
 });
-app.listen(Number(process.env.PORT ?? 8787),'0.0.0.0',() => console.log('Web Comments MCP is ready.'));
+app.use(((error,_req,res,_next) => {
+  console.error('Web Comments request failed',error.code ?? error.status ?? 'unknown');
+  if (!res.headersSent) res.status(500).json({error:'Web Comments could not complete this request.'});
+}) satisfies express.ErrorRequestHandler);
+app.listen(Number(process.env.PORT ?? 8787),'0.0.0.0',() => console.log('Web Comments is ready.'));

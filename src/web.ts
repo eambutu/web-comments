@@ -5,25 +5,56 @@ const app = document.getElementById('app')!;
 const title = document.createElement('h1'); title.textContent='Web Comments';
 const card = document.createElement('section'); card.className='card stack';
 const status = document.createElement('p'); status.className='status';
+status.hidden = true;
+function showStatus(message:string) {
+  status.textContent=message;
+  status.hidden=!message;
+}
 app.replaceChildren(title,card,status);
 function element<K extends keyof HTMLElementTagNameMap>(name:K,text?:string) {
   const node = document.createElement(name);
   if (text) node.textContent=text;
   return node;
 }
+function home(config:Config) {
+  const download = element('a','Download Chrome extension');
+  download.className='download';
+  download.href='/downloads/chrome-extension.zip';
+  const address=element('label','Server address');
+  const value=element('input');
+  value.readOnly=true;value.value=config.origin;
+  address.append(value);
+  const copy=element('button','Copy address');
+  copy.onclick=async () => {
+    try { await navigator.clipboard.writeText(config.origin); showStatus('Server address copied.'); }
+    catch { value.select(); showStatus('Select and copy the server address.'); }
+  };
+  const steps=element('ol');
+  steps.append(
+    element('li','Unzip the download. In Chrome, open chrome://extensions, turn on Developer mode, and choose Load unpacked. Select the extracted folder.'),
+    element('li','Open Web Comments from the toolbar and paste the server address.'),
+    element('li',config.setupAvailable
+      ? 'Create your account using your one-time setup code.'
+      : 'Sign in with your Web Comments account.'),
+  );
+  card.replaceChildren(element('h2','Set up Web Comments in Chrome'),download,steps,address,copy);
+}
 async function start() {
-  const config:Config = await (await fetch('/config.json')).json();
+  const response = await fetch('/config.json');
+  if (!response.ok) throw new Error('The server could not load Web Comments configuration.');
+  const config:Config = await response.json();
   const db = createClient(config.supabaseUrl,config.publishableKey);
   const consent = location.pathname === '/oauth/consent';
   const id = new URLSearchParams(location.search).get('authorization_id');
   const pageId = location.pathname.match(/^\/p\/([0-9a-f-]{36})\/?$/i)?.[1];
   if (!consent && !pageId) {
-    card.replaceChildren(element('p','Open the Chrome side panel to annotate a page, or use a copied page link.'));
+    home(config);
     return;
   }
   if (consent && !id) throw new Error('The OAuth authorization ID is missing.');
+  if (consent && !config.clientId) throw new Error('The ChatGPT connection is still being set up.');
   async function render() {
-    status.textContent='';
+    showStatus('');
     const {data:{session}} = await db.auth.getSession();
     card.replaceChildren();
     if (!session) {
@@ -42,7 +73,7 @@ async function start() {
           const {error} = await db.auth.signInWithPassword({email:inputs[0].value,password:inputs[1].value});
           if (error) throw error;
           await render();
-        } catch (error) { status.textContent=errorText(error); }
+        } catch (error) { showStatus(errorText(error)); }
         finally { submit.disabled=false; }
       };
       card.append(element('h2',consent?'Sign in to authorize ChatGPT':'Sign in to view this page'),form);
@@ -62,7 +93,7 @@ async function start() {
       const decide = async (allow:boolean) => {
         approve.disabled=deny.disabled=true;
         const {error} = await (allow ? db.auth.oauth.approveAuthorization(id!) : db.auth.oauth.denyAuthorization(id!));
-        if (error) { status.textContent=error.message;approve.disabled=deny.disabled=false; }
+        if (error) { showStatus(error.message);approve.disabled=deny.disabled=false; }
       };
       approve.onclick=()=>void decide(true);deny.onclick=()=>void decide(false);
       actions.append(approve,deny);card.append(actions);
@@ -83,4 +114,4 @@ async function start() {
   }
   await render();
 }
-void start().catch(error => {status.textContent=errorText(error);});
+void start().catch(error => {showStatus(errorText(error));});

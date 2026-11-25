@@ -1,5 +1,6 @@
 import { build } from 'esbuild';
-import { cp, mkdir, rm } from 'node:fs/promises';
+import { cp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { zipSync } from 'fflate';
 
 await rm('dist', {recursive:true,force:true});
 await mkdir('dist/extension', {recursive:true});
@@ -25,3 +26,10 @@ await Promise.all([
   cp('src/web.html','dist/web/index.html'),
   cp('src/styles.css','dist/web/assets/styles.css'),
 ]);
+
+const extensionFiles = await readdir('dist/extension',{recursive:true,withFileTypes:true});
+const archiveFiles = await Promise.all(extensionFiles.filter(file => file.isFile()).map(async file => {
+  const path = file.parentPath + '/' + file.name;
+  return [path.slice('dist/extension/'.length),await readFile(path)];
+}));
+await writeFile('dist/web/chrome-extension.zip',zipSync(Object.fromEntries(archiveFiles)));

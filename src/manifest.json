@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Web Comments",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "minimum_chrome_version": "120",
   "description": "Private, threaded annotations on webpages and PDFs.",
   "permissions": ["sidePanel","storage","tabs","clipboardWrite"],
