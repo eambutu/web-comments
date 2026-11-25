@@ -26,8 +26,9 @@ if (setupCode && setupCode.length < 32) throw new Error('Use a random WEB_COMMEN
 const admin = !configuredOwner && setupCode && secretKey
   ? createClient(supabaseUrl,secretKey,{auth:authOptions})
   : null;
+const useEdgeEnrollment = !configuredOwner && process.env.WEB_COMMENTS_ENROLLMENT_MODE === 'supabase-edge';
 const digest = (value:string) => createHash('sha256').update(value).digest();
-const setupCodeHash = admin && setupCode ? digest(setupCode) : null;
+const setupCodeHash = (useEdgeEnrollment || admin) && setupCode ? digest(setupCode) : null;
 const setupInput = z.object({
   email:z.string().trim().toLowerCase().email().max(254),
   password:z.string().min(12).refine(value => Buffer.byteLength(value,'utf8') <= 72),
@@ -54,18 +55,21 @@ app.get('/healthz', async (_req,res) => {
     if (configuredOwner) await pool.query('select 1');
     else await enrollment();
     res.json({ok:true});
-  } catch {
+  } catch (error) {
+    const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
+    const tenantMissing = error instanceof Error && /tenant or user not found/i.test(error.message);
+    console.warn('Database readiness check failed',tenantMissing ? 'pooler tenant or user not found' : code ?? 'connection failed');
     res.status(503).json({ok:false});
   }
 });
 app.get('/config.json', async (_req,res) => {
   res.set('Cache-Control','no-store');
-  const setupAvailable = Boolean(admin && !await enrollment());
+  const setupAvailable = Boolean(setupCodeHash && !await enrollment());
   res.json({supabaseUrl,publishableKey,origin,clientId,setupAvailable});
 });
 app.post('/setup/account', async (req,res) => {
   res.set('Cache-Control','no-store');
-  if (!admin || !setupCodeHash) {
+  if (!setupCodeHash) {
     res.status(404).json({error:'Account setup is unavailable.'});
     return;
   }
@@ -82,16 +86,31 @@ app.post('/setup/account', async (req,res) => {
     res.status(409).json({error:'Account setup is already complete. Sign in with your Web Comments account.'});
     return;
   }
-  const {email,password} = input.data;
-  const {error} = await admin.auth.admin.createUser({
-    email,password,email_confirm:true,app_metadata:{web_comments_owner:true},
-  });
-  if (error) {
+  const {email,password,code} = input.data;
+  let created = false;
+  if (useEdgeEnrollment) {
+    const response = await fetch(supabaseUrl+'/functions/v1/web-comments-enroll',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({email,password,code}),
+      signal:AbortSignal.timeout(15000),
+    }).catch(() => null);
+    if (!response || response.status >= 500) {
+      res.status(502).json({error:'Account setup is temporarily unavailable. Try again in a moment.'});
+      return;
+    }
+    created = response.status === 201;
+  } else if (admin) {
+    const {error} = await admin.auth.admin.createUser({
+      email,password,email_confirm:true,app_metadata:{web_comments_owner:true},
+    });
+    if (error) console.error('Supabase account setup failed',error.code,error.status);
+    created = !error;
+  }
+  if (!created) {
     if (await enrollment()) {
       res.status(409).json({error:'Account setup is already complete. Sign in with your Web Comments account.'});
       return;
     }
-    console.error('Supabase account setup failed',error.code,error.status);
     res.status(422).json({error:'Could not create the account. Check the email and password, or try signing in if the account already exists.'});
     return;
   }

@@ -23,6 +23,7 @@ before(async () => {
   await client.exec(`
     create role anon;
     create role authenticated;
+    create role service_role;
     create schema auth;
     create table auth.users(id uuid primary key, raw_app_meta_data jsonb, raw_user_meta_data jsonb);
     create function auth.uid() returns uuid language sql stable
@@ -40,6 +41,7 @@ before(async () => {
   `);
   await client.exec(await readFile(new URL('../supabase/migrations/20261125000000_web_comments.sql',import.meta.url),'utf8'));
   await client.exec(await readFile(new URL('../supabase/migrations/20261125214447_web_comments_owner_enrollment.sql',import.meta.url),'utf8'));
+  await client.exec(await readFile(new URL('../supabase/migrations/20261125230442_web_comments_enrollment_ticket.sql',import.meta.url),'utf8'));
   await client.query('insert into auth.users(id) values($1),($2)',[owner,other]);
 });
 after(async () => { await client.close(); });
@@ -49,15 +51,25 @@ test('owner enrollment uses trusted metadata and can only succeed once',async ()
   const rejected = randomUUID();
   const untrusted = randomUUID();
   const marker = JSON.stringify({web_comments_owner:true});
+  const goodHash = '1'.repeat(64);
+  const badHash = '2'.repeat(64);
+  const ticket = async hash => (await db.query('select wc_check_enrollment_code($1) as valid',[hash])).rows[0].valid;
+  await client.query('insert into wc_private.enrollment_ticket(code_hash) values($1)',[goodHash]);
+  await client.exec('set role service_role');
+  assert.equal(await ticket(goodHash),true);
+  assert.equal(await ticket(badHash),false);
+  await client.exec('reset role');
   await client.query('insert into auth.users(id,raw_user_meta_data) values($1,$2)',[untrusted,marker]);
   assert.equal((await db.query('select * from wc_private.owner_account')).rowCount,0);
   await client.query('insert into auth.users(id,raw_app_meta_data) values($1,$2)',[enrolled,marker]);
+  assert.equal(await ticket(goodHash),false);
   assert.equal((await db.query('select user_id from wc_private.owner_account')).rows[0].user_id,enrolled);
   await assert.rejects(client.query('insert into auth.users(id,raw_app_meta_data) values($1,$2)',[rejected,marker]),
     /duplicate key/);
   assert.equal((await db.query('select id from auth.users where id=$1',[rejected])).rowCount,0);
   await client.exec('set role authenticated');
   try {
+    await assert.rejects(ticket(goodHash),/permission denied/);
     await assert.rejects(db.query('select * from wc_private.owner_account'),/permission denied/);
   } finally {
     await client.exec('reset role');

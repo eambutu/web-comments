@@ -28,6 +28,8 @@ Web Comments needs a Supabase project and a running Web Comments service. The Ch
 
 Existing installations that already set `OWNER_USER_ID` can keep using that account. The setting takes precedence over owner enrollment.
 
+The hosted deployment uses `WEB_COMMENTS_ENROLLMENT_MODE=supabase-edge`. In this mode, deploy the `web-comments-enroll` Supabase Edge Function with its own setup-code authentication (`verify_jwt=false`), and provision the SHA-256 hash of the setup code as the single row in `wc_private.enrollment_ticket`. Supabase supplies the Auth admin key to the function at runtime. The web service uses its owner-scoped database login and the one-time setup code.
+
 For PDFs, choose **Open as PDF** in the panel and select text on one page. If the source requires authentication and the viewer cannot fetch it, download the PDF and choose **Open downloaded PDF** while the viewer is open for that source URL. For a local PDF, start from its Chrome tab. You can enable **Allow access to file URLs** in the extension details for direct loading, or use the file picker. **Open saved PDF** loads the latest saved binary for that source from private Storage.
 
 ## Verify ChatGPT access first
