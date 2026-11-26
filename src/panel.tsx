@@ -7,12 +7,13 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 import './styles.css';
-import { defaultServerOrigin, errorText, extensionClient, loadConfig, saveCapture, type Config } from './client';
+import { defaultServerOrigin, errorText, extensionClient, loadConfig, saveCapture, signInAccount, signUpAccount, type Config } from './client';
 import type { Capture, Message, Thread } from './model';
 
 function App() {
   const [config,setConfig] = useState<Config|null>(null);
   const [session,setSession] = useState<Session|null>(null);
+  const [signUp,setSignUp] = useState(false);
   const [loaded,setLoaded] = useState(false);
   const [busy,setBusy] = useState(false);
   const [status,setStatus] = useState('');
@@ -53,10 +54,13 @@ function App() {
         setConfig(next);
         return;
       }
-      const email = String(form.get('email')).trim().toLowerCase();
+      const login = String(form.get('login'));
       const password = String(form.get('password'));
-      const {error} = await db.auth.signInWithPassword({email,password});
-      if (error) throw error;
+      if (signUp) {
+        await signUpAccount(config.origin,login,password);
+        setSignUp(false);
+      }
+      await signInAccount(db,config.origin,login,password);
     });
   }
   return <main className="shell">
@@ -65,18 +69,27 @@ function App() {
       if (error) throw error;
     })}>Sign out</button>}</header>
     {!loaded ? <p>Loading…</p> : db && session && config
-      ? <Workspace db={db} owner={session.user.id} origin={config.origin}/>
-      : <form key={db ? 'sign-in' : 'server'} onSubmit={submit} className="card stack">
-        <h2>{db ? 'Sign in' : 'Connect your server'}</h2>
+      ? <Workspace key={session.user.id} db={db} owner={session.user.id} origin={config.origin}/>
+      : <form key={db ? String(signUp) : 'server'} onSubmit={submit} className="card stack">
+        <h2>{db ? signUp ? 'Create your account' : 'Sign in' : 'Connect your server'}</h2>
         {db ? <>
-          {config?.ownerInvitationPending && <p>Open your Web Comments invitation email to create your account, then sign in here.</p>}
-          <label>Email<input name="email" type="email" required autoComplete="username"/></label>
-          <label>Password<input name="password" type="password" required autoComplete="current-password"/></label>
+          <label>{signUp ? 'Username' : 'Username or email'}
+            <input name="login" type="text" required autoComplete="username" autoCapitalize="none" spellCheck={false}
+              minLength={signUp ? 3 : undefined} maxLength={signUp ? 32 : undefined}
+              pattern={signUp ? '[A-Za-z][A-Za-z0-9_\\-]{2,31}' : undefined}
+              title={signUp ? 'Start with a letter. Use only letters, numbers, underscores or hyphens.' : undefined}/>
+          </label>
+          <label>Password<input name="password" type="password" required minLength={signUp ? 12 : undefined}
+            autoComplete={signUp ? 'new-password' : 'current-password'}/></label>
+          {signUp && <p>Use at least 12 characters. Save your password so you can sign in again.</p>}
         </> : <label>Server address<input name="server" type="url" defaultValue={defaultServerOrigin} placeholder="https://…" required /></label>}
-        <button className="primary" disabled={busy}>{busy ? 'Working…' : db ? 'Sign in' : 'Connect'}</button>
+        <button className="primary" disabled={busy}>{busy ? 'Working…' : db ? signUp ? 'Create account' : 'Sign in' : 'Connect'}</button>
         {db && <div className="actions">
+          <button type="button" className="subtle" disabled={busy} onClick={() => {
+            setSignUp(!signUp);setStatus('');
+          }}>{signUp ? 'Back to sign in' : 'Sign up'}</button>
           <button type="button" className="subtle" disabled={busy} onClick={() => void act(async () => {
-            await chrome.storage.local.remove('wcConfig');setConfig(null);
+            await chrome.storage.local.remove('wcConfig');setConfig(null);setSignUp(false);
           })}>Change server</button>
         </div>}
       </form>}
@@ -175,7 +188,12 @@ function DocumentPanel({db,owner,origin,view}:{db:SupabaseClient;owner:string;or
     channel.subscribe();
     const interval = setInterval(() => void update(),8000);
     void update();
-    return () => { live=false; clearInterval(interval); void db.removeChannel(channel); };
+    return () => {
+      live=false;
+      clearInterval(interval);
+      void db.removeChannel(channel);
+      void send(view,view.pdf?'wc-pdf-highlights':'wc-html-highlights',{threads:[]}).catch(() => {});
+    };
   },[db,view.source,view.pdf]);
   const answers = new Map(messages.filter(message => message.reply_to).map(message => [message.reply_to,message]));
   const pending = messages.filter(message => message.question && !answers.has(message.id)).length;

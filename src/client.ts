@@ -9,7 +9,6 @@ export type Config = {
   publishableKey:string;
   origin:string;
   clientId:string|null;
-  ownerInvitationPending?:boolean;
 };
 export async function loadConfig(address:string):Promise<Config> {
   const origin = new URL(address).origin;
@@ -30,6 +29,32 @@ export function extensionClient(config:Config) {
       removeItem:async key => { await chrome.storage.local.remove(key); },
     }},
   });
+}
+async function accountRequest(origin:string,action:'signup'|'username-login',login:string,password:string) {
+  const response = await fetch(origin+'/auth/'+action,{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({login,password}),
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(data?.error || 'Could not reach your Web Comments account.');
+  return data;
+}
+export async function signUpAccount(origin:string,username:string,password:string) {
+  await accountRequest(origin,'signup',username.trim().toLowerCase(),password);
+}
+export async function signInAccount(db:SupabaseClient,origin:string,login:string,password:string) {
+  const name = login.trim().toLowerCase();
+  if (name.includes('@')) {
+    const {error} = await db.auth.signInWithPassword({email:name,password});
+    if (error) throw error;
+    return;
+  }
+  const tokens = await accountRequest(origin,'username-login',name,password);
+  if (typeof tokens?.access_token !== 'string' || typeof tokens?.refresh_token !== 'string') {
+    throw new Error('The server did not return a valid sign-in session.');
+  }
+  const {error} = await db.auth.setSession(tokens);
+  if (error) throw error;
 }
 export async function upload(db:SupabaseClient, path:string, content:Blob) {
   const {error} = await db.storage.from('web-comments').upload(path,content,{upsert:false});

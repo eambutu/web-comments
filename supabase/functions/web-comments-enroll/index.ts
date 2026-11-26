@@ -3,10 +3,13 @@ import { createClient } from 'npm:@supabase/supabase-js@2.99.0';
 const url = Deno.env.get('SUPABASE_URL')!;
 const secret = JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS') ?? '{}').default
   ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-const admin = createClient(url,secret,{auth:{persistSession:false,autoRefreshToken:false}});
+const publishable = JSON.parse(Deno.env.get('SUPABASE_PUBLISHABLE_KEYS') ?? '{}').default
+  ?? Deno.env.get('SUPABASE_ANON_KEY');
+const auth = {persistSession:false,autoRefreshToken:false};
+const admin = createClient(url,secret,{auth});
 
-function respond(status:number) {
-  return Response.json({ok:status === 201},{status,headers:{'Cache-Control':'no-store'}});
+function respond(status:number, body:object = {ok:status === 201}) {
+  return Response.json(body,{status,headers:{'Cache-Control':'no-store'}});
 }
 
 async function limitedJson(request:Request):Promise<unknown> {
@@ -31,17 +34,36 @@ Deno.serve(async request => {
   if (request.method !== 'POST') return respond(405);
   const body = await limitedJson(request).catch(() => null);
   if (!body || typeof body !== 'object') return respond(400);
-  const {password,token} = body as Record<string,unknown>;
-  const encoder = new TextEncoder();
-  if (typeof password !== 'string' || password.length < 12 || encoder.encode(password).length > 72
-      || typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token)) return respond(400);
-  const digest = await crypto.subtle.digest('SHA-256',encoder.encode(token));
-  const candidate_hash = Array.from(new Uint8Array(digest),byte => byte.toString(16).padStart(2,'0')).join('');
-  const {data:email,error:checkError} = await admin.rpc('wc_owner_invitee',{candidate_hash});
-  if (checkError) return respond(503);
-  if (typeof email !== 'string' || !email) return respond(403);
-  const {error} = await admin.auth.admin.createUser({
-    email,password,email_confirm:true,app_metadata:{web_comments_owner:true},
-  });
-  return respond(error ? 422 : 201);
+  const {action,login,password} = body as Record<string,unknown>;
+  if (typeof login !== 'string' || !/^[a-z][a-z0-9_-]{2,31}$/.test(login)
+      || typeof password !== 'string' || !password.length || new TextEncoder().encode(password).length > 72
+      || (action !== 'signup' && action !== 'username-login')) return respond(400);
+
+  const lookup = () => admin.rpc('wc_email_for_username',{p_username:login});
+  const {data:email,error:lookupError} = await lookup();
+  if (lookupError) return respond(503);
+
+  if (action === 'signup') {
+    if (password.length < 12) return respond(400);
+    if (email) return respond(409);
+    const alias = crypto.randomUUID()+'@accounts.web-comments.invalid';
+    const {error} = await admin.auth.admin.createUser({
+      email:alias,
+      password,email_confirm:true,app_metadata:{web_comments_username:login},
+    });
+    if (error?.status === 429) return respond(429);
+    if (error?.code === 'weak_password') return respond(422);
+    // Verify that Auth attached the username. A concurrent registration may have claimed it.
+    const {data:mappedEmail} = await lookup();
+    if (!error && mappedEmail === alias) return respond(201);
+    if (mappedEmail) return respond(409);
+    return respond(503);
+  }
+
+  if (typeof email !== 'string' || !email) return respond(401);
+  const db = createClient(url,publishable,{auth});
+  const {data:{session},error} = await db.auth.signInWithPassword({email,password});
+  if (error?.status === 429) return respond(429);
+  if (!session) return respond(error?.status && error.status < 500 ? 401 : 503);
+  return respond(200,{access_token:session.access_token,refresh_token:session.refresh_token});
 });
