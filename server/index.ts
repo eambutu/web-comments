@@ -1,6 +1,5 @@
 import express from 'express';
 import pg from 'pg';
-import { createHash, timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { createClient } from '@supabase/supabase-js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -20,20 +19,10 @@ const configuredOwner = process.env.OWNER_USER_ID?.toLowerCase();
 const clientId = process.env.MCP_OAUTH_CLIENT_ID || null;
 const databaseUrl = env('DATABASE_URL');
 const pool = new pg.Pool({ connectionString:databaseUrl, connectionTimeoutMillis:5000 });
-const setupCode = process.env.WEB_COMMENTS_SETUP_CODE;
-const secretKey = process.env.SUPABASE_SECRET_KEY;
 const authOptions = {persistSession:false,autoRefreshToken:false};
-if (setupCode && setupCode.length < 32) throw new Error('Use a random WEB_COMMENTS_SETUP_CODE of at least 32 characters.');
-const admin = !configuredOwner && setupCode && secretKey
-  ? createClient(supabaseUrl,secretKey,{auth:authOptions})
-  : null;
-const useEdgeEnrollment = !configuredOwner && process.env.WEB_COMMENTS_ENROLLMENT_MODE === 'supabase-edge';
-const digest = (value:string) => createHash('sha256').update(value).digest();
-const setupCodeHash = (useEdgeEnrollment || admin) && setupCode ? digest(setupCode) : null;
-const setupInput = z.object({
-  email:z.string().trim().toLowerCase().email().max(254),
+const inviteInput = z.object({
   password:z.string().min(12).refine(value => Buffer.byteLength(value,'utf8') <= 72),
-  code:z.string().trim().max(256),
+  token:z.string().regex(/^[a-f0-9]{64}$/),
 });
 
 async function enrollment() {
@@ -67,63 +56,45 @@ app.get('/healthz', async (_req,res) => {
 });
 app.get('/config.json', async (_req,res) => {
   res.set('Cache-Control','no-store');
-  const setupAvailable = Boolean(setupCodeHash && !await enrollment());
-  res.json({supabaseUrl,publishableKey,origin,clientId,setupAvailable});
+  const ownerInvitationPending = !configuredOwner && !await enrollment();
+  res.json({supabaseUrl,publishableKey,origin,clientId,ownerInvitationPending});
 });
-app.post('/setup/account', async (req,res) => {
+app.post('/invite/accept', async (req,res) => {
   res.set('Cache-Control','no-store');
-  if (!setupCodeHash) {
-    res.status(404).json({error:'Account setup is unavailable.'});
-    return;
-  }
-  const input = setupInput.safeParse(req.body);
+  const input = inviteInput.safeParse(req.body);
   if (!input.success) {
-    res.status(400).json({error:'Enter a valid email and a password of at least 12 characters and at most 72 bytes.'});
+    res.status(400).json({error:'Open the invitation from your email and choose a password of at least 12 characters and at most 72 bytes.'});
     return;
   }
-  if (!timingSafeEqual(digest(input.data.code),setupCodeHash)) {
-    res.status(403).json({error:'The setup code is incorrect.'});
+  if (configuredOwner || await enrollment()) {
+    res.status(409).json({error:'An owner account already exists. Sign in to Web Comments in Chrome.'});
     return;
   }
-  if (await enrollment()) {
-    res.status(409).json({error:'Account setup is already complete. Sign in with your Web Comments account.'});
-    return;
-  }
-  const {email,password,code} = input.data;
-  let created = false;
-  if (useEdgeEnrollment) {
-    const response = await fetch(supabaseUrl+'/functions/v1/web-comments-enroll',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({email,password,code}),
-      signal:AbortSignal.timeout(15000),
-    }).catch(() => null);
-    if (!response || response.status >= 500) {
-      res.status(502).json({error:'Account setup is temporarily unavailable. Try again in a moment.'});
-      return;
-    }
-    created = response.status === 201;
-  } else if (admin) {
-    const {error} = await admin.auth.admin.createUser({
-      email,password,email_confirm:true,app_metadata:{web_comments_owner:true},
-    });
-    if (error) console.error('Supabase account setup failed',error.code,error.status);
-    created = !error;
-  }
-  if (!created) {
+  const response = await fetch(supabaseUrl+'/functions/v1/web-comments-enroll',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(input.data),
+    signal:AbortSignal.timeout(15000),
+  }).catch(() => null);
+  if (response?.status === 201) {
+    res.status(201).json({ok:true});
+  } else if (response?.status === 403) {
+    res.status(403).json({error:'This invitation has expired or is invalid.'});
+  } else if (response?.status === 422) {
     if (await enrollment()) {
-      res.status(409).json({error:'Account setup is already complete. Sign in with your Web Comments account.'});
+      res.status(409).json({error:'An owner account already exists. Sign in to Web Comments in Chrome.'});
       return;
     }
-    res.status(422).json({error:'Could not create the account. Check the email and password, or try signing in if the account already exists.'});
-    return;
+    res.status(422).json({error:'Could not create the account. Try a different password.'});
+  } else {
+    res.status(502).json({error:'Account setup is temporarily unavailable. Try again in a moment.'});
   }
-  res.status(201).json({ok:true});
 });
 app.use('/assets', express.static(fileURLToPath(new URL('./web/assets/',import.meta.url))));
 app.get('/downloads/chrome-extension.zip', (_req,res) => {
   res.download(fileURLToPath(new URL('./web/chrome-extension.zip',import.meta.url)),'web-comments-chrome-extension.zip');
 });
-app.get(['/oauth/consent','/p/:id','/'], (_req,res) => {
+app.get(['/oauth/consent','/invite','/p/:id','/'], (req,res) => {
+  if (req.path === '/invite') res.set('Cache-Control','no-store');
   res.set('Content-Security-Policy', `default-src 'none'; script-src 'self'; style-src 'self'; connect-src ${supabaseUrl} 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`);
   res.set('Referrer-Policy','no-referrer');
   res.sendFile(fileURLToPath(new URL('./web/index.html',import.meta.url)));

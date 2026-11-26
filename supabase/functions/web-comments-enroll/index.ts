@@ -31,16 +31,15 @@ Deno.serve(async request => {
   if (request.method !== 'POST') return respond(405);
   const body = await limitedJson(request).catch(() => null);
   if (!body || typeof body !== 'object') return respond(400);
-  const {email,password,code} = body as Record<string,unknown>;
+  const {password,token} = body as Record<string,unknown>;
   const encoder = new TextEncoder();
-  if (typeof email !== 'string' || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-      || typeof password !== 'string' || password.length < 12 || encoder.encode(password).length > 72
-      || typeof code !== 'string' || code.length < 32 || code.length > 256) return respond(400);
-  const digest = await crypto.subtle.digest('SHA-256',encoder.encode(code));
+  if (typeof password !== 'string' || password.length < 12 || encoder.encode(password).length > 72
+      || typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token)) return respond(400);
+  const digest = await crypto.subtle.digest('SHA-256',encoder.encode(token));
   const candidate_hash = Array.from(new Uint8Array(digest),byte => byte.toString(16).padStart(2,'0')).join('');
-  const {data:open,error:checkError} = await admin.rpc('wc_check_enrollment_code',{candidate_hash});
+  const {data:email,error:checkError} = await admin.rpc('wc_owner_invitee',{candidate_hash});
   if (checkError) return respond(503);
-  if (open !== true) return respond(403);
+  if (typeof email !== 'string' || !email) return respond(403);
   const {error} = await admin.auth.admin.createUser({
     email,password,email_confirm:true,app_metadata:{web_comments_owner:true},
   });

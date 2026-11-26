@@ -5,6 +5,7 @@ const app = document.getElementById('app')!;
 const title = document.createElement('h1'); title.textContent='Web Comments';
 const card = document.createElement('section'); card.className='card stack';
 const status = document.createElement('p'); status.className='status';
+status.setAttribute('role','status');
 status.hidden = true;
 function showStatus(message:string) {
   status.textContent=message;
@@ -25,8 +26,8 @@ function home(config:Config) {
   steps.append(
     element('li','Unzip the download. In Chrome, open chrome://extensions, turn on Developer mode, and choose Load unpacked. Select the extracted folder.'),
     element('li',preconfigured ? 'Open Web Comments from the toolbar.' : 'Open Web Comments from the toolbar and paste the server address.'),
-    element('li',config.setupAvailable
-      ? 'Create your account using your one-time setup code.'
+    element('li',config.ownerInvitationPending
+      ? 'Open your Web Comments invitation email to create your account, then sign in in Chrome.'
       : 'Sign in with your Web Comments account.'),
   );
   card.replaceChildren(element('h2','Set up Web Comments in Chrome'),download,steps);
@@ -42,7 +43,45 @@ function home(config:Config) {
   };
   card.append(address,copy);
 }
+function acceptInvitation() {
+  const token = new URLSearchParams(location.hash.slice(1)).get('token');
+  const heading = element('h2','Accept your Web Comments invitation');
+  if (!token || !/^[a-f0-9]{64}$/.test(token)) {
+    card.replaceChildren(heading,element('p','Open the complete invitation link from your email.'));
+    return;
+  }
+  const form=element('form');form.className='stack';
+  const label=element('label','Choose a password');
+  const password=element('input');
+  password.type='password';password.required=true;password.minLength=12;
+  password.autocomplete='new-password';label.append(password);
+  const submit=element('button','Create account');submit.className='primary';
+  form.append(label,element('p','Use at least 12 characters.'),submit);
+  form.onsubmit = async event => {
+    event.preventDefault();submit.disabled=true;showStatus('');
+    try {
+      const response = await fetch('/invite/accept',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({token,password:password.value}),
+      });
+      if (!response.ok) {
+        const problem = await response.json().catch(() => null);
+        throw new Error(problem?.error || 'Account setup could not be completed.');
+      }
+      history.replaceState(null,'',location.pathname);
+      const download=element('a','Download Chrome extension');
+      download.href='/downloads/chrome-extension.zip';
+      download.className='download';
+      card.replaceChildren(element('h2','Your account is ready'),
+        element('p','Open Web Comments in Chrome and sign in with the email that received the invitation and the password you just chose.'),
+        download);
+    } catch (error) { showStatus(errorText(error)); }
+    finally { submit.disabled=false; }
+  };
+  card.replaceChildren(heading,form);
+}
 async function start() {
+  if (location.pathname === '/invite') { acceptInvitation(); return; }
   const response = await fetch('/config.json');
   if (!response.ok) throw new Error('The server could not load Web Comments configuration.');
   const config:Config = await response.json();

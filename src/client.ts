@@ -9,7 +9,7 @@ export type Config = {
   publishableKey:string;
   origin:string;
   clientId:string|null;
-  setupAvailable?:boolean;
+  ownerInvitationPending?:boolean;
 };
 export async function loadConfig(address:string):Promise<Config> {
   const origin = new URL(address).origin;
@@ -21,16 +21,6 @@ export async function loadConfig(address:string):Promise<Config> {
   const config = await response.json();
   if (config.origin !== origin || !config.publishableKey || !config.supabaseUrl) throw new Error('Invalid server configuration.');
   return config;
-}
-export async function createOwnerAccount(config:Config, email:string, password:string, code:string) {
-  const response = await fetch(config.origin + '/setup/account',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({email,password,code}),
-  });
-  if (response.ok || response.status === 409) return;
-  const problem = await response.json().catch(() => null);
-  throw new Error(problem?.error || 'The server could not create your account.');
 }
 export function extensionClient(config:Config) {
   return createClient(config.supabaseUrl,config.publishableKey,{
