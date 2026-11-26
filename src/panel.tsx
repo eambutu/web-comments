@@ -7,7 +7,7 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 import './styles.css';
-import { createOwnerAccount, errorText, extensionClient, loadConfig, saveCapture, type Config } from './client';
+import { createOwnerAccount, defaultServerOrigin, errorText, extensionClient, loadConfig, saveCapture, type Config } from './client';
 import type { Capture, Message, Thread } from './model';
 
 function App() {
@@ -21,10 +21,15 @@ function App() {
   useEffect(() => {
     void chrome.storage.local.get('wcConfig').then(async result => {
       const saved = result.wcConfig as Config|undefined;
-      if (!saved) { setLoaded(true); return; }
-      const current = await loadConfig(saved.origin).catch(() => saved);
-      setConfig(current);
+      const address = saved?.origin || defaultServerOrigin;
+      if (!address) { setLoaded(true); return; }
+      const current = await loadConfig(address).catch(error => {
+        if (saved) return saved;
+        throw error;
+      });
       if (current !== saved) await chrome.storage.local.set({wcConfig:current});
+      setConfig(current);
+      setRegister(Boolean(current.setupAvailable));
     }).catch(error => { setStatus(errorText(error)); setLoaded(true); });
   },[]);
   useEffect(() => {
@@ -77,7 +82,7 @@ function App() {
           <label>Password<input name="password" type="password" required minLength={register ? 12 : undefined}
             autoComplete={register ? 'new-password' : 'current-password'}/></label>
           {register && <label>One-time setup code<input name="code" type="password" required autoComplete="off"/></label>}</>
-          : <label>Server address<input name="server" type="url" placeholder="https://…" required /></label>}
+          : <label>Server address<input name="server" type="url" defaultValue={defaultServerOrigin} placeholder="https://…" required /></label>}
         <button className="primary" disabled={busy}>{busy ? 'Working…' : db ? register ? 'Create account' : 'Sign in' : 'Connect'}</button>
         {db && <div className="actions">
           {(register || config?.setupAvailable) && <button type="button" className="subtle" disabled={busy}

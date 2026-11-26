@@ -1,6 +1,9 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { hash, type Capture } from './model';
 
+declare const DEFAULT_WEB_COMMENTS_ORIGIN: string;
+export const defaultServerOrigin = DEFAULT_WEB_COMMENTS_ORIGIN;
+
 export type Config = {
   supabaseUrl:string;
   publishableKey:string;

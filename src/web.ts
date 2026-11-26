@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { errorText, type Config } from './client';
+import { defaultServerOrigin, errorText, type Config } from './client';
 
 const app = document.getElementById('app')!;
 const title = document.createElement('h1'); title.textContent='Web Comments';
@@ -20,6 +20,17 @@ function home(config:Config) {
   const download = element('a','Download Chrome extension');
   download.className='download';
   download.href='/downloads/chrome-extension.zip';
+  const preconfigured = defaultServerOrigin === config.origin;
+  const steps=element('ol');
+  steps.append(
+    element('li','Unzip the download. In Chrome, open chrome://extensions, turn on Developer mode, and choose Load unpacked. Select the extracted folder.'),
+    element('li',preconfigured ? 'Open Web Comments from the toolbar.' : 'Open Web Comments from the toolbar and paste the server address.'),
+    element('li',config.setupAvailable
+      ? 'Create your account using your one-time setup code.'
+      : 'Sign in with your Web Comments account.'),
+  );
+  card.replaceChildren(element('h2','Set up Web Comments in Chrome'),download,steps);
+  if (preconfigured) return;
   const address=element('label','Server address');
   const value=element('input');
   value.readOnly=true;value.value=config.origin;
@@ -29,15 +40,7 @@ function home(config:Config) {
     try { await navigator.clipboard.writeText(config.origin); showStatus('Server address copied.'); }
     catch { value.select(); showStatus('Select and copy the server address.'); }
   };
-  const steps=element('ol');
-  steps.append(
-    element('li','Unzip the download. In Chrome, open chrome://extensions, turn on Developer mode, and choose Load unpacked. Select the extracted folder.'),
-    element('li','Open Web Comments from the toolbar and paste the server address.'),
-    element('li',config.setupAvailable
-      ? 'Create your account using your one-time setup code.'
-      : 'Sign in with your Web Comments account.'),
-  );
-  card.replaceChildren(element('h2','Set up Web Comments in Chrome'),download,steps,address,copy);
+  card.append(address,copy);
 }
 async function start() {
   const response = await fetch('/config.json');

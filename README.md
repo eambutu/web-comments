@@ -7,7 +7,7 @@ A personal Chrome side panel for annotating webpages and PDFs. Save a selection,
 Web Comments needs a Supabase project and a running Web Comments service. The Chrome extension uses the service address to find your Supabase project. ChatGPT connects to the same service over HTTPS.
 
 1. Complete the Supabase and service setup below.
-2. Open your Web Comments website, download the Chrome extension, and load it in Chrome. Enter the server address in the side panel, then create your account.
+2. Open your Web Comments website, download the Chrome extension, and load it in Chrome. Open the side panel and create your account.
 3. Connect the service as a custom OAuth app in ChatGPT using the verification steps below.
 4. In Chrome, select text on a webpage, click **Comment on selection**, and post a question such as `@AI What is the main point of this paragraph?`
 5. Click **Copy link**, paste it into a ChatGPT conversation with the app enabled, and ask ChatGPT to answer the pending questions. Look for its reply in the same Chrome thread.
@@ -23,12 +23,14 @@ Web Comments needs a Supabase project and a running Web Comments service. The Ch
    node --env-file=.env dist/server.js
    ```
 
-3. Open the service website and choose **Download Chrome extension**. Extract the ZIP. In Chrome 120 or later, open `chrome://extensions`, turn on **Developer mode**, and choose **Load unpacked**. Select the folder containing `manifest.json`. Open the toolbar action, paste your server address, and create your account with your email, password, and one-time setup code. The server records that account as the owner and closes account creation. Reload tabs that were open before the extension was loaded.
+3. Open the service website and choose **Download Chrome extension**. Extract the ZIP. In Chrome 120 or later, open `chrome://extensions`, turn on **Developer mode**, and choose **Load unpacked**. Select the folder containing `manifest.json`. Open the toolbar action and create your account with your email, password, and one-time setup code. The server records that account as the owner and closes account creation. Reload tabs that were open before the extension was loaded.
 4. Enable the **OAuth Server** in Supabase Auth. Set the Auth **Site URL** to the service's public HTTPS origin and the **Authorization Path** to `/oauth/consent`. Register a predefined OAuth client for ChatGPT using the exact redirect URI shown during ChatGPT app setup. Set the service's `MCP_OAUTH_CLIENT_ID` to that client's ID. A public client uses PKCE. If you register a confidential client, add its secret in the ChatGPT app configuration. Leave dynamic registration off. You can create your account and annotate pages before setting up ChatGPT.
 
 For the hosted Supabase connection, use the project’s session pooler and keep certificate verification enabled with `sslmode=verify-full&sslrootcert=server/certs/supabase-postgres.pem`. The bundled public CA certificates come from the official Supabase CLI. [Supabase CLI certificate source](https://github.com/supabase/cli/tree/ac6b3b6b68d76e1a70d5f9b0073fea7524b80374/apps/cli/src/command-internal/supabase-ca-templates)
 
 Existing installations that already set `OWNER_USER_ID` can keep using that account. The setting takes precedence over owner enrollment.
+
+The extension download uses `PUBLIC_ORIGIN` or Render’s `RENDER_EXTERNAL_URL` from build time as its default server. A build without either setting prompts for the address. **Change server** remains available from the sign-in screen.
 
 The hosted deployment uses `WEB_COMMENTS_ENROLLMENT_MODE=supabase-edge`. In this mode, deploy the `web-comments-enroll` Supabase Edge Function with its own setup-code authentication (`verify_jwt=false`), and provision the SHA-256 hash of the setup code as the single row in `wc_private.enrollment_ticket`. Supabase supplies the Auth admin key to the function at runtime. The web service uses its owner-scoped database login and the one-time setup code.
 

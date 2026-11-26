@@ -2,6 +2,9 @@ import { build } from 'esbuild';
 import { cp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { zipSync } from 'fflate';
 
+const publicAddress = process.env.PUBLIC_ORIGIN || process.env.RENDER_EXTERNAL_URL;
+const define = {DEFAULT_WEB_COMMENTS_ORIGIN:JSON.stringify(publicAddress ? new URL(publicAddress).origin : '')};
+
 await rm('dist', {recursive:true,force:true});
 await mkdir('dist/extension', {recursive:true});
 const bundle = (entryPoints, outdir, options={}) => build({
@@ -10,8 +13,8 @@ const bundle = (entryPoints, outdir, options={}) => build({
 });
 await Promise.all([
   bundle(['src/background.ts','src/content.ts'],'dist/extension',{format:'iife'}),
-  bundle(['src/panel.tsx','src/viewer.ts'],'dist/extension',{format:'esm'}),
-  bundle(['src/web.ts'],'dist/web/assets',{format:'esm'}),
+  bundle(['src/panel.tsx','src/viewer.ts'],'dist/extension',{format:'esm',define}),
+  bundle(['src/web.ts'],'dist/web/assets',{format:'esm',define}),
   bundle(['server/index.ts'],'dist',{target:'node22',platform:'node',format:'esm',packages:'external',entryNames:'server'}),
   bundle(['server/review.ts'],'dist',{target:'node22',platform:'node',format:'esm',packages:'external'}),
   cp('node_modules/pdfjs-dist/build/pdf.worker.mjs','dist/extension/pdf.worker.mjs'),
