@@ -2,11 +2,12 @@ import React, { useEffect, useMemo, useRef, useState, type FormEvent } from 'rea
 import { createRoot } from 'react-dom/client';
 import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js';
 import { AccountForm } from './account-form';
-import { errorText, loadConfig, saveCapture, type Config } from './client';
+import { errorText, loadConfig, type Config } from './client';
 import { savedComments } from './comment-store';
 import { DocumentPanel, type DocumentView } from './document-panel';
-import { htmlDocument } from './html-document';
-import { fetchSnapshot, listLibrary, loadSnapshot, type Entry, type Snapshot } from './library-data';
+import { ArticleView } from './article-view';
+import { fetchSnapshot, listLibrary, loadSnapshot, saveLibrarySnapshot, type Entry, type Snapshot } from './library-data';
+import type { ArticleMode } from '../shared/article-mode';
 import { SidePanel } from './side-panel';
 import './content.css';
 import './styles.css';
@@ -42,7 +43,7 @@ function LibraryApp() {
     {status && <p className="library-account-error status" role="alert">{status}</p>}
     {db && config && session!==undefined
       ? session
-        ? <Workspace key={session.user.id} db={db} owner={session.user.id} origin={config.origin}/>
+        ? <Workspace key={session.user.id} db={db} owner={session.user.id} origin={config.origin} mode={config.articleMode ?? 'reader'}/>
         : <main className="library-welcome">
           <div>
             <h2>Save a page to read and annotate later.</h2>
@@ -56,7 +57,7 @@ function LibraryApp() {
 
 type OpenDocument = {key:string;snapshot:Snapshot;entry?:Entry};
 
-function Workspace({db,owner,origin}:{db:SupabaseClient;owner:string;origin:string}) {
+function Workspace({db,owner,origin,mode}:{db:SupabaseClient;owner:string;origin:string;mode:ArticleMode}) {
   const [entries,setEntries]=useState<Entry[]>([]);
   const [url,setUrl]=useState('');
   const [open,setOpen]=useState<OpenDocument|null>(null);
@@ -77,7 +78,7 @@ function Workspace({db,owner,origin}:{db:SupabaseClient;owner:string;origin:stri
     setStatus('');
     setBusy('Opening document…');
     try {
-      const snapshot=await loadSnapshot(db,entry.id);
+      const snapshot=await loadSnapshot(db,entry.id,mode);
       if (current!==operation.current) return;
       setView(null);
       setOpen({key:crypto.randomUUID(),snapshot,entry});
@@ -107,7 +108,7 @@ function Workspace({db,owner,origin}:{db:SupabaseClient;owner:string;origin:stri
     const current=++operation.current;
     setBusy('Importing document…');setStatus('');
     try {
-      const snapshot=await fetchSnapshot(db,url.trim());
+      const snapshot=await fetchSnapshot(db,url.trim(),mode);
       if (current!==operation.current) return;
       setBusy('Saving snapshot…');
       setView(null);
@@ -123,13 +124,12 @@ function Workspace({db,owner,origin}:{db:SupabaseClient;owner:string;origin:stri
     let live=true;
     void (async()=>{
       const capture=await view.capture();
-      const html=pending.snapshot.kind==='html'?pending.snapshot.html:null;
-      const saved=await saveCapture(db,owner,capture,html);
+      const {page:saved,snapshot}=await saveLibrarySnapshot(db,owner,capture,pending.snapshot);
       if (!live) return;
       const item:Entry={id:saved.page_id,source:capture.url,title:capture.title,kind:capture.kind,
         importedAt:new Date().toISOString()};
       setBusy('');
-      setOpen({...pending,entry:item});
+      setOpen({...pending,entry:item,snapshot});
       setEntries(items=>{
         const existing=items.findIndex(entry=>entry.id===item.id);
         if (existing<0) return [item,...items];
@@ -149,7 +149,7 @@ function Workspace({db,owner,origin}:{db:SupabaseClient;owner:string;origin:stri
       if (capture.kind==='pdf' && capture.binaryHash && !capture.pdfPath) {
         capture={...capture,pdfBlob:undefined,pdfPath:owner+'/'+capture.binaryHash+'.pdf'};
       }
-      return saveCapture(db,owner,capture,snapshot.kind==='html'?snapshot.html:null);
+      return saveLibrarySnapshot(db,owner,capture,snapshot).then(result=>result.page);
     }};
   },[comments,open,db,owner]);
 
@@ -184,9 +184,11 @@ function Workspace({db,owner,origin}:{db:SupabaseClient;owner:string;origin:stri
             <div><h2>{title}</h2><p>{new URL(open.snapshot.source).hostname}</p></div>
             <a href={open.snapshot.source} target="_blank" rel="noopener noreferrer">Open original</a>
           </header>
-          <SnapshotView key={open.key} snapshot={open.snapshot} onReady={setView} onFailure={error=>{
-            setStatus(error);setBusy('');
-          }}/>
+          {open.snapshot.kind==='html'
+            ? <ArticleView key={open.key} snapshot={open.snapshot} mode={mode} onReady={setView}/>
+            : <PdfSnapshotView key={open.key} snapshot={open.snapshot} onReady={setView} onFailure={error=>{
+              setStatus(error);setBusy('');
+            }}/> }
         </>
         : <section className="library-empty">
           <h2>Import a public article or PDF</h2>
@@ -203,30 +205,14 @@ function Workspace({db,owner,origin}:{db:SupabaseClient;owner:string;origin:stri
   </div>;
 }
 
-function SnapshotView({snapshot,onReady,onFailure}:{
-  snapshot:Snapshot;onReady:(view:DocumentView)=>void;onFailure:(message:string)=>void;
+function PdfSnapshotView({snapshot,onReady,onFailure}:{
+  snapshot:Extract<Snapshot,{kind:'pdf'}>;onReady:(view:DocumentView)=>void;onFailure:(message:string)=>void;
 }) {
-  const root=useRef<HTMLElement>(null);
   const pages=useRef<HTMLDivElement>(null);
   const status=useRef<HTMLParagraphElement>(null);
   const failed=useRef(onFailure);
   failed.current=onFailure;
   useEffect(()=>{
-    if (snapshot.kind==='html') {
-      const page=htmlDocument(root.current!,()=>({url:snapshot.source,title:snapshot.title}));
-      onReady({source:snapshot.source,title:snapshot.title,
-        capture:async ()=>{
-          if (document.readyState!=='complete') {
-            await new Promise<void>(resolve=>window.addEventListener('load',()=>resolve(),{once:true}));
-          }
-          const capture=page.capture();
-          return {...capture,complete:capture.complete && snapshot.complete,
-            note:[snapshot.note,capture.note].filter(Boolean).join(' ')};
-        },highlight:async (threads,focus)=>page.highlight(threads,focus),
-      });
-      return page.dispose;
-    }
-
     let live=true;
     let dispose:(()=>void)|undefined;
     void import('./pdf-document').then(async ({pdfDocument})=>{
@@ -251,9 +237,7 @@ function SnapshotView({snapshot,onReady,onFailure}:{
     return ()=>{live=false;dispose?.();};
   },[snapshot,onReady]);
 
-  return snapshot.kind==='html'
-    ? <article className="reader-content" ref={root} dangerouslySetInnerHTML={{__html:snapshot.html}}/>
-    : <section className="library-pdf" aria-label="PDF snapshot">
+  return <section className="library-pdf" aria-label="PDF snapshot">
       <p ref={status} role="status">Opening PDF…</p>
       <div ref={pages} className="pdf-pages"/>
     </section>;

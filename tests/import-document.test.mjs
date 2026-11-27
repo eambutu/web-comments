@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseHTML } from 'linkedom';
 import sharp from 'sharp';
-import { cleanArticle, importDocument, importUrl, isPublicAddress } from '../dist/import-document.js';
+import { articleSnapshots, cleanArticle, importDocument, importUrl, isPublicAddress } from '../dist/import-document.js';
 
 test('document imports accept public addresses and reject non-public connections',async () => {
   assert.equal(importUrl('https://example.org/read#paragraph').href,'https://example.org/read');
@@ -67,4 +67,49 @@ test('conventional article containers keep the title and use alt text when an im
   assert.match(article.html,/<em>Missing diagram<\/em><figcaption>Diagram notes<\/figcaption>/);
   assert.doesNotMatch(article.html,/Site navigation|<img/);
   assert.match(article.note,/images could not be saved/);
+});
+
+test('saved layouts inline styles relative to each final stylesheet URL and replay deterministically',async () => {
+  const url=new URL('https://example.org/articles/story');
+  const source='<html><head><link rel="stylesheet" href="/theme.css"></head><body class="paper">'+
+    '<article><h1>Field notes</h1><p>A passage for an offline reader.</p></article></body></html>';
+  const requests=[];
+  const load=async (address,kind)=>{
+    requests.push([address.href,kind]);
+    if (address.pathname==='/theme.css') return {url:new URL('https://cdn.example.org/v1/theme.css'),
+      body:Buffer.from('@import "colors.css" screen; .paper {background-image:url(missing.png)}'),contentType:'text/css'};
+    if (address.href==='https://cdn.example.org/v1/colors.css') return {url:address,
+      body:Buffer.from('h1 {color: navy}'),contentType:'text/css'};
+    return null;
+  };
+  const reader=await articleSnapshots(source,url,load,'reader');
+  assert.equal(reader.archive,null);
+  assert.equal(requests.length,0);
+  const first=await articleSnapshots(source,url,load,'both');
+  assert.deepEqual(requests,[
+    ['https://example.org/theme.css','style'],['https://cdn.example.org/v1/missing.png','image'],
+    ['https://cdn.example.org/v1/colors.css','style'],
+  ]);
+  assert.equal(first.html,reader.html);
+  assert.equal(first.archive.missingAssets,1);
+  const {document}=parseHTML(first.archive.html);
+  assert.equal(document.body.className,'paper');
+  assert.match(document.querySelector('style').textContent,/@media screen/);
+  assert.match(document.querySelector('style').textContent,/color: navy/);
+  assert.doesNotMatch(first.archive.html,/colors\.css|missing\.png|<link/);
+  assert.deepEqual((await articleSnapshots(source,url,load,'both')).archive,first.archive);
+});
+
+test('archive-only imports and comparison imports survive a failed Reader conversion',async () => {
+  const url=new URL('https://example.org/long');
+  const source='<html><body><article><h1>Long article</h1><p>'+('text '.repeat(150_000))+'</p></article></body></html>';
+  const load=async()=>null;
+  await assert.rejects(articleSnapshots(source,url,load,'reader'),/too large/);
+  const archive=await articleSnapshots(source,url,load,'archive');
+  const both=await articleSnapshots(source,url,load,'both');
+  assert.equal(archive.title,'Long article');
+  assert.equal(archive.archive.version,1);
+  assert.deepEqual(archive,both);
+  assert.ok(Buffer.byteLength(archive.html)<750000);
+  assert.match(archive.html,/^<!--web-comments:saved-layout-text:1--><pre>/);
 });

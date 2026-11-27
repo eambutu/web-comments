@@ -12,15 +12,16 @@ const { values, positionals: urls }=parseArgs({
     out:{type:'string',default:'dist/import-previews'},
     source:{type:'string'},
     images:{type:'string'},
+    assets:{type:'string'},
     archive:{type:'boolean'},
     screenshot:{type:'boolean'},
     browser:{type:'string'},
     focus:{type:'string',multiple:true,default:[]},
   },
 });
-if (!urls.length || values.source && urls.length!==1 || values.archive && !values.source ||
-    values.images && !values.source || values.focus.length && !values.screenshot) {
-  throw Error('Usage: npm run import:preview -- [--out directory] [--source captured.html --images directory --archive] [--screenshot [--browser /path/to/chromium] [--focus selector]] URL [URL ...]');
+if (!urls.length || values.source && urls.length!==1 ||
+    (values.images || values.assets) && !values.source || values.focus.length && !values.screenshot) {
+  throw Error('Usage: npm run import:preview -- [--out directory] [--archive] [--source captured.html --assets directory] [--screenshot [--browser /path/to/chromium] [--focus selector]] URL [URL ...]');
 }
 
 const root=fileURLToPath(new URL('../',import.meta.url));
@@ -29,48 +30,24 @@ const escape=value=>String(value).replace(/[&<>"']/g,char=>({
   '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;',
 }[char]));
 const write=(name,value)=>writeFile(join(out,name),value);
-const localImages=new Map();
 const original=values.source?await readFile(resolve(values.source),'utf8'):null;
 
-function localImage(url,source) {
-  if (!values.images || url.origin!==source.origin) return null;
-  const name=basename(url.pathname);
-  if (!/^[\w.-]+\.(?:avif|gif|jpe?g|png|webp)$/i.test(name)) return null;
-  if (!localImages.has(name)) {
-    localImages.set(name,readFile(join(resolve(values.images),name)).catch(()=>null));
+async function localAsset(url,kind,source) {
+  const extension=extname(url.pathname).toLowerCase();
+  const parts=url.pathname.split('/').filter(Boolean);
+  if (!parts.every(part=>/^[a-zA-Z0-9._@%+-]+$/.test(part) && part!=='.' && part!=='..')) return null;
+  let bytes;
+  if (values.assets) {
+    bytes=await readFile(join(resolve(values.assets),url.hostname,...parts)).catch(()=>null);
   }
-  return localImages.get(name);
-}
-
-const archivePolicy="default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'";
-async function archivePage(html,url) {
-  const {document}=parseHTML(html);
-  document.querySelectorAll('script,iframe,frame,embed,object,meta[http-equiv],base,link,form,video source,audio source').forEach(node=>node.remove());
-  for (const media of document.querySelectorAll('video,audio')) media.removeAttribute('src');
-  for (const node of document.querySelectorAll('a,area')) {
-    if (!node.getAttribute('href')?.startsWith('#')) node.removeAttribute('href');
+  if (!bytes && kind==='image' && values.images && url.origin===source.origin &&
+      /^\.(?:avif|gif|jpe?g|png|webp|svg)$/.test(extension)) {
+    bytes=await readFile(join(resolve(values.images),basename(url.pathname))).catch(()=>null);
   }
-  await Promise.all(Array.from(document.querySelectorAll('img,video'),async node=>{
-    const isImage=node.localName==='img';
-    const attr=isImage?'src':'poster';
-    const raw=node.getAttribute('data-src') ?? node.getAttribute(attr);
-    node.removeAttribute(attr);
-    node.removeAttribute('srcset');
-    if (!raw) return;
-    try {
-      const asset=new URL(raw,url);
-      const bytes=await localImage(asset,url);
-      if (!bytes) return;
-      const extension=extname(asset.pathname).slice(1).toLowerCase();
-      node.setAttribute(attr,'data:image/'+(extension==='jpg'?'jpeg':extension)+';base64,'+bytes.toString('base64'));
-    } catch {}
-  }));
-  // The archive is a scriptless, opaque-origin frame. Its CSP blocks publisher network requests.
-  const policy=document.createElement('meta');
-  policy.setAttribute('http-equiv','Content-Security-Policy');
-  policy.setAttribute('content',archivePolicy);
-  document.head.prepend(policy);
-  return '<!doctype html>'+document.documentElement.outerHTML;
+  if (!bytes) return null;
+  const contentType=kind==='style'?'text/css':kind==='font'?'font/'+extension.slice(1):
+    extension==='.svg'?'image/svg+xml':'image/'+extension.slice(1);
+  return {body:bytes,url,contentType};
 }
 
 const htmlPage=(title,csp,styles,body)=>`<!doctype html>
@@ -93,10 +70,10 @@ try {
     readFile(join(root,'src/content.css'),'utf8'),
     readFile(join(root,'src/library.css'),'utf8'),
   ]);
-  const { cleanArticle, importDocument, importUrl }=await import(pathToFileURL(join(scratch,'importer.mjs')).href);
+  const { articleSnapshots, importDocument, importUrl }=await import(pathToFileURL(join(scratch,'importer.mjs')).href);
   const js=clientBundle.outputFiles[0].text;
   const digest=createHash('sha256').update(js).digest('base64');
-  const csp=`default-src 'none'; script-src 'sha256-${digest}'; style-src 'unsafe-inline'; img-src data:; frame-src 'self'; base-uri 'none'`;
+  const csp=`default-src 'none'; script-src 'sha256-${digest}'; style-src 'unsafe-inline'; img-src data:; font-src data:; frame-src 'self'; base-uri 'none'`;
   const styles=baseCss+contentCss+libraryCss+'body {background:#fffdf8}';
   if (values.screenshot) {
     const {chromium}=await import('playwright-core');
@@ -109,8 +86,9 @@ try {
     rows.push(row);
     try {
       const url=importUrl(input);
-      const result=original===null?await importDocument(url.href):
-        await cleanArticle(original,url,asset=>localImage(asset,url));
+      const mode=values.archive?'both':'reader';
+      const result=original===null?await importDocument(url.href,mode):
+        await articleSnapshots(original,url,(asset,kind)=>localAsset(asset,kind,url),mode);
       if (result.kind!=='html') throw Error('The URL returned a PDF. This preview exercises the HTML reader.');
       const slug=(basename(url.pathname,extname(url.pathname)) || url.hostname).toLowerCase().replace(/[^a-z0-9-]+/g,'-').slice(0,65);
       const name=String(index+1).padStart(2,'0')+'-'+slug;
@@ -132,12 +110,15 @@ try {
         '</h2><p>'+escape(url.hostname)+'</p></div><a href="'+escape(result.url)+
         '" target="_blank" rel="noopener noreferrer">Open original</a></header><article class="reader-content"></article></main>'+
         '<script id="snapshot" type="application/json">'+payload+'</script><script>'+js+'</script>'));
-      if (values.archive) {
+      if (values.archive && result.archive) {
         row.archive=name+'-archive.html';
-        const archive=await archivePage(original,url);
-        await write(row.archive,htmlPage(result.title+" · archive",csp,
+        row.archiveMissingAssets=result.archive.missingAssets;
+        row.archiveBytes=Buffer.byteLength(result.archive.html);
+        const archivePayload=JSON.stringify({archive:result.archive}).replaceAll('<','\\u003c');
+        await write(row.archive,htmlPage(result.title+' · saved layout',csp,
           'html,body,iframe {box-sizing:border-box;width:100%;height:100%;margin:0;border:0} iframe {display:block}',
-          '<iframe title="Archived article" sandbox="" srcdoc="'+escape(archive)+'"></iframe>'));
+          '<iframe title="Saved article layout" sandbox="allow-same-origin" referrerpolicy="no-referrer"></iframe>'+
+          '<script id="snapshot" type="application/json">'+archivePayload+'</script><script>'+js+'</script>'));
       }
 
       if (browser) {
@@ -179,14 +160,19 @@ try {
           }
           if (row.archive) {
             await page.goto(previewRoot+row.archive);
+            await page.locator('html[data-preview-ready]').waitFor({timeout:5000});
             const frame=page.frameLocator('iframe');
             await frame.locator('body').waitFor({timeout:5000});
-            row.archiveImages=await frame.locator('body').evaluate(async node=>{
+            row.archiveRendered=await frame.locator('body').evaluate(async node=>{
+              await node.ownerDocument.fonts.ready;
               const images=Array.from(node.querySelectorAll('img[src^="data:"]'));
               images.forEach(image=>image.loading='eager');
               await Promise.all(images.map(image=>image.decode().catch(()=>{})));
-              return images.filter(image=>image.naturalWidth>0).length;
+              return {images:images.length,loadedImages:images.filter(image=>image.naturalWidth>0).length,
+                inlineCharts:node.querySelectorAll('svg').length,svgUses:node.querySelectorAll('svg use').length,
+                loadedFonts:[...node.ownerDocument.fonts].filter(font=>font.status==='loaded').length};
             });
+            if (row.archiveRendered.images!==row.archiveRendered.loadedImages) throw Error('A saved layout image failed to decode.');
             const file=name+'-archive.png';
             await page.screenshot({path:join(out,file)});
             row.screenshots.push(file);
@@ -217,7 +203,7 @@ try {
   await write('index.html',htmlPage('Article import previews',indexCsp,indexStyle,'<main><h1>Article import previews</h1>'+
     '<p><a href="report.json">Measurements</a></p><ol>'+rows.map(row=>'<li>'+
       (row.page?'<a href="'+escape(row.page)+'">'+escape(row.title)+'</a>':escape(row.input))+
-      (row.archive?' · <a href="'+escape(row.archive)+'">Archive prototype</a>':'')+
+      (row.archive?' · <a href="'+escape(row.archive)+'">Saved layout</a>':'')+
       (row.error?'<p>'+escape(row.error)+'</p>':'')+
       (row.screenshots?.length?'<p class="captures">'+row.screenshots.map(file=>{
         const layout=file.includes('-archive')?'Archive':'Reader';
