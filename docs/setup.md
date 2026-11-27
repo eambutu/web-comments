@@ -124,7 +124,8 @@ The browser library and extension work without an MCP connection. On the hosted 
 | npm cache is unwritable | Use a writable cache, for example `npm --cache /tmp/web-comments-npm-cache ci --include=dev`. |
 | Invalid server configuration | The browser address and `origin` in `/config.json` must match, including the scheme and port. A saved Chrome server can override the build default. |
 | `/healthz` returns `503` | Check the project URL, publishable key, and migration that provides `wc_public_health`. Check the database API is reachable from the running server. |
-| Email arrives with a link instead of a code | Check **Confirm signup** is using the repo template and test the most recent email. Email delivery and rate limits are controlled by Supabase. |
+| Resend reports success and nothing arrives | Check the inbox and spam folder for the exact address used to sign up. Supabase can accept the request without sending mail for an already-confirmed or unknown address. If you have confirmed the email, use **Sign in**. |
+| Email arrives with a link instead of a code | Check **Confirm signup** is using the repo template with `{{ .Token }}` and test the most recent email. Remove `{{ .ConfirmationURL }}` to keep email security scanners from opening a confirmation link. Email delivery and rate limits are controlled by Supabase. |
 | Import fails for a public-looking link | Check for a document-level login wall, anti-automation response, redirects, size limits, or a source that requires JavaScript to render. Use a direct public article or PDF URL. |
 | Highlight cannot be matched | Check that the visible text still contains the saved passage. PDF anchors are also tied to the original binary’s hash. |
 | ChatGPT returns `503` or `401` | A `503` indicates the configured client ID is missing. A `401` indicates the bearer token failed access checks. Verify the registered client, token issuer, consent, and signed-in owner. |

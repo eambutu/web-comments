@@ -35,7 +35,7 @@ function checkEmailDelivery(error:AuthError|null) {
     throw new Error('Confirmation emails are currently unavailable. Try again later.');
   }
   if (error?.code === 'over_email_send_rate_limit' || error?.code === 'over_request_rate_limit') {
-    throw new Error('Please wait a moment before requesting another email.');
+    throw new Error('Too many requests to send a confirmation email. Try again later.');
   }
   if (error) throw error;
 }
@@ -61,7 +61,13 @@ export async function confirmEmailCode(db:SupabaseClient,email:string,token:stri
 
 export async function resendConfirmationCode(db:SupabaseClient,email:string) {
   const {error} = await db.auth.resend({email,type:'signup'});
+  if (error?.code==='over_email_send_rate_limit') {
+    const seconds = Number(/\bafter (\d+) seconds?\b/i.exec(error.message)?.[1]);
+    // Supabase reports the remaining wait in whole seconds rounded down.
+    if (Number.isSafeInteger(seconds) && seconds>=0) return seconds+1;
+  }
   checkEmailDelivery(error);
+  return null;
 }
 
 export async function signInAccount(db:SupabaseClient,email:string,password:string) {
