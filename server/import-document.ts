@@ -87,18 +87,21 @@ function renderArticle(document:Document,url:URL) {
     throw new ImportError('This page is too complex to import.');
   }
   const title=document.title.trim();
+  const structured=document.querySelector('main article, [role="main"] article')
+    ?? document.querySelector('main, [role="main"], article');
   let reader:ReturnType<Readability['parse']>=null;
-  try {
-    reader=new Readability(document.cloneNode(true) as Document,{maxElemsToParse:20000,keepClasses:false}).parse();
-  } catch {
-    // Keep a readable fallback for documents that Readability cannot classify.
+  if (!structured?.textContent?.trim()) {
+    try {
+      reader=new Readability(document.cloneNode(true) as Document,{maxElemsToParse:20000,keepClasses:false}).parse();
+    } catch {
+      // Keep a readable fallback for documents that Readability cannot classify.
+    }
   }
   const main=reader?.content
     ? parseHTML('<!doctype html><html><body>'+reader.content+'</body></html>').document.body
-    : document.querySelector('main, [role="main"], article') ?? document.body;
-  if (!reader?.content && main===document.body) {
-    main.querySelectorAll('nav, footer, aside, [role="navigation"], [role="banner"]').forEach(node=>node.remove());
-  }
+    : structured ?? document.body;
+  const navigation=main===document.body ? 'nav, footer, aside, [role="navigation"], [role="banner"]' : 'nav, [role="navigation"]';
+  main.querySelectorAll(navigation).forEach(node=>node.remove());
 
   let incomplete=false;
   function serialize(node:Node,depth:number):string {

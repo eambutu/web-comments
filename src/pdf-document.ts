@@ -2,8 +2,8 @@ import { getDocument, GlobalWorkerOptions, TextLayer, type PDFDocumentProxy } fr
 import { errorText } from './client';
 import { hash, type Capture, type PDFAnchor, type Thread } from './model';
 
-export function pdfDocument({source,assets,status,pages,onTitle}:{
-  source:string;assets:URL;status:HTMLElement;pages:HTMLElement;onTitle?:(title:string)=>void;
+export function pdfDocument({source,assets,status,pages,onTitle,deriveTitle=false}:{
+  source:string;assets:URL;status:HTMLElement;pages:HTMLElement;onTitle?:(title:string)=>void;deriveTitle?:boolean;
 }) {
   GlobalWorkerOptions.workerSrc = new URL('pdf.worker.mjs',assets).href;
 
@@ -61,6 +61,7 @@ export function pdfDocument({source,assets,status,pages,onTitle}:{
       if (operation !== current) { await doc.destroy(); return; }
       pdf = doc;
       const text:string[] = [];
+      let heading = '';
       const issues:string[] = [];
       const renders = new Map<Element,()=>Promise<void>>();
       observer = new IntersectionObserver(entries => {
@@ -78,6 +79,17 @@ export function pdfDocument({source,assets,status,pages,onTitle}:{
           const viewport = page.getViewport({scale:1.25});
           const extracted = await page.getTextContent({includeMarkedContent:false});
           const items = extracted.items.flatMap(item => 'str' in item ? [item] : []);
+          if (number===1 && deriveTitle) {
+            const candidates = items.filter(item=>{
+              const value=item.str.trim();
+              const size=Math.hypot(item.transform[0],item.transform[1]);
+              return value.length>=8 && value.length<=160 && /\p{L}/u.test(value)
+                && Math.abs(item.transform[1])<size*.15 && item.transform[5]>viewport.height/viewport.scale*.55;
+            });
+            const largest=candidates.reduce((best,item)=>Math.abs(item.transform[0])>Math.abs(best.transform[0])?item:best,
+              candidates[0]);
+            heading=largest?.str.trim() ?? '';
+          }
           const body = items.map((item,index) => {
             const next = items[index+1];
             const separate = item.hasEOL || (next && Math.abs(next.transform[5]-item.transform[5]) > 3);
@@ -118,7 +130,8 @@ export function pdfDocument({source,assets,status,pages,onTitle}:{
       const metadata = await doc.getMetadata().catch(() => null);
       const info = metadata?.info as {Title?:string}|undefined;
       if (operation !== current) return;
-      const title = info?.Title?.trim() || lastSegment || 'PDF document';
+      const numericName=!lastSegment || /^\d+(?:\.\d+)*(?:v\d+)?(?:\.pdf)?$/i.test(lastSegment);
+      const title = info?.Title?.trim() || (numericName ? heading : '') || lastSegment || 'PDF document';
       onTitle?.(title);
       documentData = {bytes,capture:{url:source,title,text:text.join('\n\n'),kind:'pdf',
         complete:issues.length === 0,note:issues.join(' '),anchor:null,binaryHash}};

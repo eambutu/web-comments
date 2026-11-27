@@ -182,7 +182,7 @@ function Workspace({db,owner,origin}:{db:SupabaseClient;owner:string;origin:stri
         ? <>
           <header className="library-document-header">
             <div><h2>{title}</h2><p>{new URL(open.snapshot.source).hostname}</p></div>
-            <a href={open.snapshot.source} target="_blank" rel="noopener noreferrer">Open original ↗</a>
+            <a href={open.snapshot.source} target="_blank" rel="noopener noreferrer">Open original</a>
           </header>
           <SnapshotView key={open.key} snapshot={open.snapshot} onReady={setView} onFailure={error=>{
             setStatus(error);setBusy('');
@@ -232,7 +232,7 @@ function SnapshotView({snapshot,onReady,onFailure}:{
     void import('./pdf-document').then(async ({pdfDocument})=>{
       if (!live) return;
       const viewer=pdfDocument({source:snapshot.source,assets:new URL('/assets/',location.origin),
-        pages:pages.current!,status:status.current!});
+        pages:pages.current!,status:status.current!,deriveTitle:true});
       dispose=viewer.dispose;
       await viewer.load(()=>snapshot.bytes.arrayBuffer());
       if (!live) return;
