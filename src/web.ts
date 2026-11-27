@@ -34,9 +34,11 @@ function home(config:Config) {
   );
   const signup = element('a','Create a private account');
   signup.href='/signup';
+  const library = element('a','Open your web library');
+  library.href='/library';
   const playground = element('a','Try the playground');
   playground.href='/playground';
-  card.replaceChildren(element('h2','Set up Web Comments in Chrome'),playground,download,steps,signup);
+  card.replaceChildren(library,playground,element('h2','Set up Web Comments in Chrome'),download,steps,signup);
   if (preconfigured) return;
   const address=element('label','Server address');
   const value=element('input');
@@ -93,15 +95,15 @@ async function start() {
         accountForm({db,initialSignUp:path==='/signup',onSignedIn:renderAccount});
         return;
       }
-      const playground=element('a','Open the playground');
-      playground.href='/playground?mode=account';
+      const library=element('a','Open your library');
+      library.href='/library';
       const signOut=element('button','Sign out');
       signOut.onclick=async ()=>{
         const {error}=await db.auth.signOut();
         if (error) showStatus(error.message);
         else await renderAccount();
       };
-      resetCard(element('h2','Signed in'),playground,signOut);
+      resetCard(element('h2','Signed in'),library,signOut);
     }
     await renderAccount();
     return;

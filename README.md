@@ -12,6 +12,10 @@ Web Comments needs a Supabase project and a running Web Comments service. The Ch
 4. In Chrome, select text on a webpage, click **Comment on selection**, and post a question such as `@AI What is the main point of this paragraph?`
 5. Click **Copy link**, paste it into a ChatGPT conversation with the app enabled, and ask ChatGPT to answer the pending questions. Look for its reply in the same Chrome thread.
 
+## Use the web library
+
+Open `/library`, sign in with your Web Comments account, and import the link to a public article or PDF. The left sidebar lists your saved snapshots. Select text and use the shared comments panel beside the reader. The library keeps a readable HTML snapshot or a private copy of the PDF so you can reopen it after the source changes. HTML imports preserve text and structure and omit scripts, site navigation, and remote images. Some sites restrict automated downloads or require a signed-in browser session.
+
 ## Try it in a browser
 
 Open `/playground` on the service website. **Try sample** shows the Chrome side panel next to a sample document. You can select text, copy a sample link or ID, open the PDF version, and preview example replies. Sample threads clear on reload. **My account** uses the same private account and commenting tools as the Chrome extension. Save a question there and use **Copy link** to try the ChatGPT workflow without installing anything.

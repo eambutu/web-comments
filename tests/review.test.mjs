@@ -73,6 +73,7 @@ before(async () => {
   await client.exec(await readFile(new URL('../supabase/migrations/20261126040704_web_comments_email_invitation.sql',import.meta.url),'utf8'));
   await client.exec(await readFile(new URL('../supabase/migrations/20261126174114_web_comments_private_accounts.sql',import.meta.url),'utf8'));
   await client.exec(await readFile(new URL('../supabase/migrations/20261126174323_web_comments_username_auth_metadata.sql',import.meta.url),'utf8'));
+  await client.exec(await readFile(new URL('../supabase/migrations/20261127091651_web_comments_library.sql',import.meta.url),'utf8'));
   await client.query('insert into auth.users(id) values($1),($2)',[owner,other]);
 });
 after(async () => { await client.close(); });
@@ -99,6 +100,35 @@ test('MCP guides bare links into one coordinated review and offers a reusable pr
   } finally {
     await client.close();
     await server.close();
+  }
+});
+
+test('library imports keep a private snapshot pinned across later extension captures',async () => {
+  const source='https://example.com/article';
+  const body='A saved article paragraph';
+  const hash=digest(body);
+  const html='<p>'+body+'</p>';
+  const args=[source,hash,body,html];
+  const statement="select wc_save_import($1,'Saved article','html',$2,$2,true,'',$3,null,null,$4) as library";
+  await account(owner);
+  await client.exec('set role authenticated');
+  try {
+    const {rows:[saved]}=await db.query(statement,args);
+    const {rows:[snapshot]}=await db.query('select * from wc_library');
+    assert.equal(snapshot.page_id,saved.library.page_id);
+    assert.equal(snapshot.version_id,saved.library.version_id);
+    assert.equal(snapshot.snapshot_html,html);
+    const newer=await capture(source,'A later extension capture');
+    assert.equal(newer.page_id,snapshot.page_id);
+    assert.notEqual(newer.version_id,snapshot.version_id);
+    assert.equal((await db.query('select version_id from wc_library')).rows[0].version_id,snapshot.version_id);
+    await assert.rejects(db.query('update wc_library set snapshot_html=$1',[html]),/permission denied/);
+    await account(other);
+    assert.equal((await db.query('select * from wc_library')).rowCount,0);
+    const {rows:[personal]}=await db.query(statement,args);
+    assert.notEqual(personal.library.page_id,snapshot.page_id);
+  } finally {
+    await client.exec('reset role');
   }
 });
 

@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { z } from 'zod';
 import { createReviewServer } from './review';
+import { ImportError, importDocument } from './import-document';
 
 function env(key: string) {
   const value = process.env[key];
@@ -71,16 +72,52 @@ app.post('/auth/username-login', async (req,res) => {
   }
   res.status(502).json({error:'Sign-in is temporarily unavailable. Try again shortly.'});
 });
+const activeImports=new Set<string>();
+app.post('/api/import', async (req,res) => {
+  res.set('Cache-Control','no-store');
+  const token=req.get('authorization')?.match(/^Bearer (\S+)$/i)?.[1];
+  if (!token || token.length>16000) {
+    res.status(401).json({error:'Sign in to import a document.'});
+    return;
+  }
+  const {data:{user}}=await publicDb.auth.getUser(token);
+  if (!user || user.is_anonymous || !user.email_confirmed_at) {
+    res.status(401).json({error:'Sign in with a confirmed email to import a document.'});
+    return;
+  }
+  const input=z.object({url:z.string().trim().min(1).max(2048)}).safeParse(req.body);
+  if (!input.success) {
+    res.status(400).json({error:'Enter a public article or PDF link.'});
+    return;
+  }
+  if (activeImports.has(user.id) || activeImports.size>=4) {
+    res.status(429).json({error:'An import is already in progress. Try again in a moment.'});
+    return;
+  }
+  activeImports.add(user.id);
+  try {
+    const result=await importDocument(input.data.url);
+    if (result.kind==='pdf') {
+      res.type('application/pdf').set('X-Web-Comments-Source',result.url).send(result.body);
+    } else res.json(result);
+  } catch (error) {
+    if (!(error instanceof ImportError)) throw error;
+    res.status(error.status).json({error:error.message});
+  } finally {
+    activeImports.delete(user.id);
+  }
+});
 app.use('/assets', express.static(fileURLToPath(new URL('./web/assets/',import.meta.url))));
 app.get('/downloads/chrome-extension.zip', (_req,res) => {
   res.download(fileURLToPath(new URL('./web/chrome-extension.zip',import.meta.url)),'web-comments-chrome-extension.zip');
 });
-app.get(['/oauth/consent','/playground','/signup','/sign-in','/extension/sign-in','/p/:id','/'], (req,res) => {
+app.get(['/oauth/consent','/library','/playground','/signup','/sign-in','/extension/sign-in','/p/:id','/'], (req,res) => {
   if (/\/(?:sign-in|signup)\/?$/.test(req.path)) res.set('Cache-Control','no-store');
   const realtime = supabaseUrl.replace(/^http(s?):/, 'ws$1:');
   res.set('Content-Security-Policy', `default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; worker-src 'self'; connect-src ${supabaseUrl} ${realtime} 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`);
   res.set('Referrer-Policy','no-referrer');
-  const page = req.path.replace(/\/$/,'') === '/playground' ? 'playground.html' : 'index.html';
+  const path=req.path.replace(/\/$/,'');
+  const page=path==='/library'?'library.html':path==='/playground'?'playground.html':'index.html';
   res.sendFile(fileURLToPath(new URL('./web/'+page,import.meta.url)));
 });
 
