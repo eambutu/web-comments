@@ -15,7 +15,7 @@ export type DocumentView = {
   openAsPdf?():void;
 };
 
-export function DocumentPanel({store,view,shareOrigin}:{store:CommentStore;view:DocumentView;shareOrigin?:string}) {
+export function DocumentPanel({store,view,pageLink}:{store:CommentStore;view:DocumentView;pageLink?:(id:string)=>string}) {
   const [threads,setThreads] = useState<Thread[]>([]);
   const [messages,setMessages] = useState<Message[]>([]);
   const [missing,setMissing] = useState<string[]>([]);
@@ -63,11 +63,11 @@ export function DocumentPanel({store,view,shareOrigin}:{store:CommentStore;view:
   }
   async function copy(asLink:boolean) {
     await act(async () => {
-      if (!shareOrigin) return;
+      if (!pageLink) return;
       setManualCopy(null);
       const snapshot = await capture();
       const page = await store.save(snapshot);
-      const value = asLink ? `${shareOrigin}/p/${page.page_id}` : page.page_id;
+      const value = asLink ? pageLink(page.page_id) : page.page_id;
       const label = asLink ? 'Page link' : 'Page ID';
       try {
         await navigator.clipboard.writeText(value);
@@ -100,15 +100,12 @@ export function DocumentPanel({store,view,shareOrigin}:{store:CommentStore;view:
           setReply(null);setDraft({capture:snapshot,page,text:'',id:crypto.randomUUID()});
           if (!snapshot.complete) setStatus('Capture incomplete. '+snapshot.note);
         })}>Comment on selection</button>
-        {shareOrigin && <>
+        {pageLink && <>
           <button disabled={busy} onClick={() => void copy(true)}>Copy link</button>
           <button disabled={busy} onClick={() => void copy(false)}>Copy ID</button>
         </>}
         {view.openAsPdf && <button disabled={busy} onClick={view.openAsPdf}>Open as PDF</button>}
-        {store.previewReplies && <button disabled={busy||pending===0} onClick={() => void act(async () => {
-          await store.previewReplies?.();
-          await refresh.current();
-        })}>Preview replies</button>}
+
       </div>
     </section>
     {status && <p className="status" role="status">{status}</p>}

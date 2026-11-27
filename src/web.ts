@@ -1,5 +1,9 @@
+import React from 'react';
+import { createRoot, type Root } from 'react-dom/client';
 import { createClient } from '@supabase/supabase-js';
-import { defaultServerOrigin, errorText, signInAccount, signUpAccount, type Config } from './client';
+import { AccountForm } from './account-form';
+import { defaultServerOrigin, errorText, loadConfig, type Config } from './client';
+import { challengePattern, extensionSignInPath, handOffSession } from './extension-auth';
 
 const app = document.getElementById('app')!;
 const title = document.createElement('h1'); title.textContent='Web Comments';
@@ -45,43 +49,64 @@ function home(config:Config) {
   };
   card.append(address,copy);
 }
-function accountSignup() {
-  const form = element('form');
-  form.className='stack';
-  const username = element('input');
-  username.name='username';username.autocomplete='username';username.required=true;
-  username.minLength=3;username.maxLength=32;username.pattern='[A-Za-z][A-Za-z0-9_\\-]{2,31}';
-  username.title='Start with a letter. Use only letters, numbers, underscores or hyphens.';
-  username.autocapitalize='none';username.spellcheck=false;
-  const usernameLabel = element('label','Username');
-  usernameLabel.append(username);
-  const password = element('input');
-  password.name='password';password.type='password';password.autocomplete='new-password';
-  password.required=true;password.minLength=12;
-  const passwordLabel = element('label','Password');
-  passwordLabel.append(password);
-  const submit=element('button','Create account');submit.className='primary';
-  form.append(usernameLabel,passwordLabel,element('p','Use at least 12 characters. Save your password so you can sign in again.'),submit);
-  form.onsubmit=async event => {
-    event.preventDefault();submit.disabled=true;showStatus('');
-    try {
-      await signUpAccount(location.origin,username.value,password.value);
-      const download=element('a','Download Chrome extension');
-      download.href='/downloads/chrome-extension.zip';download.className='download';
-      card.replaceChildren(element('h2','Your account is ready'),
-        element('p','Open Web Comments in Chrome and sign in with the username and password you just chose.'),download);
-    } catch (error) { showStatus(errorText(error)); }
-    finally { submit.disabled=false; }
-  };
-  card.replaceChildren(element('h2','Create your account'),form);
+let accountRoot:Root|undefined;
+function resetCard(...children:Node[]) {
+  accountRoot?.unmount();
+  accountRoot=undefined;
+  card.replaceChildren(...children);
+}
+function accountForm(props:React.ComponentProps<typeof AccountForm>, ...heading:Node[]) {
+  const container=element('div');
+  container.className='stack';
+  resetCard(...heading,container);
+  accountRoot=createRoot(container);
+  accountRoot.render(React.createElement(AccountForm,props));
 }
 async function start() {
-  if (location.pathname === '/signup') { accountSignup(); return; }
-  const response = await fetch('/config.json');
-  if (!response.ok) throw new Error('The server could not load Web Comments configuration.');
-  const config:Config = await response.json();
+  const config=await loadConfig(location.origin);
+  const path=location.pathname.replace(/\/$/,'') || '/';
+  const query=new URLSearchParams(location.search);
+  if (path===extensionSignInPath) {
+    const state=new URLSearchParams(location.hash.slice(1)).get('state');
+    if (!state || !challengePattern.test(state)) {
+      resetCard(element('h2','Sign in from Chrome'),
+        element('p','Open Web Comments in the Chrome side panel to start a sign-in.'));
+      return;
+    }
+    const db=createClient(config.supabaseUrl,config.publishableKey,{
+      auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},
+    });
+    accountForm({db,origin:config.origin,initialSignUp:query.get('mode')==='signup',async onSignedIn(session) {
+      await handOffSession(state,session);
+      history.replaceState(null,'',extensionSignInPath);
+      resetCard(element('h2','Signed in to Web Comments in Chrome'),
+        element('p','Return to your previous tab and open the Web Comments side panel.'));
+    }},element('p','Sign in to use Web Comments in the Chrome side panel.'));
+    return;
+  }
+
   const db = createClient(config.supabaseUrl,config.publishableKey);
-  const consent = location.pathname === '/oauth/consent';
+  if (path==='/sign-in' || path==='/signup') {
+    async function renderAccount() {
+      const {data:{session}}=await db.auth.getSession();
+      if (!session) {
+        accountForm({db,origin:config.origin,initialSignUp:path==='/signup',onSignedIn:renderAccount});
+        return;
+      }
+      const playground=element('a','Open the playground');
+      playground.href='/playground?mode=account';
+      const signOut=element('button','Sign out');
+      signOut.onclick=async ()=>{
+        const {error}=await db.auth.signOut();
+        if (error) showStatus(error.message);
+        else await renderAccount();
+      };
+      resetCard(element('h2','Signed in'),playground,signOut);
+    }
+    await renderAccount();
+    return;
+  }
+  const consent = path === '/oauth/consent';
   const id = new URLSearchParams(location.search).get('authorization_id');
   const pageId = location.pathname.match(/^\/p\/([0-9a-f-]{36})\/?$/i)?.[1];
   if (!consent && !pageId) {
@@ -93,31 +118,12 @@ async function start() {
   async function render() {
     showStatus('');
     const {data:{session}} = await db.auth.getSession();
-    card.replaceChildren();
     if (!session) {
-      const form = element('form'); form.className='stack';
-      const inputs = ['Username or email','Password'].map((name,index) => {
-        const label=element('label',name),input=element('input');
-        input.type=index===0?'text':'password';input.required=true;
-        input.autocomplete=index===0?'username':'current-password';
-        if (index===0) { input.autocapitalize='none';input.spellcheck=false; }
-        label.append(input);form.append(label);
-        return input;
-      });
-      const submit=element('button','Sign in');submit.className='primary';form.append(submit);
-      form.onsubmit = async event => {
-        event.preventDefault();submit.disabled=true;
-        try {
-          await signInAccount(db,config.origin,inputs[0].value,inputs[1].value);
-          await render();
-        } catch (error) { showStatus(errorText(error)); }
-        finally { submit.disabled=false; }
-      };
-      const signup=element('a','Create a private account');
-      signup.href='/signup';signup.target='_blank';signup.rel='noopener';
-      card.append(element('h2',consent?'Sign in to authorize ChatGPT':'Sign in to view this page'),form,signup);
+      accountForm({db,origin:config.origin,onSignedIn:render},
+        element('p',consent?'Sign in to authorize ChatGPT.':'Sign in to view this page.'));
       return;
     }
+    resetCard();
     if (consent) {
       const {data,error} = await db.auth.oauth.getAuthorizationDetails(id!);
       if (error) throw error;
@@ -125,7 +131,7 @@ async function start() {
       if (data.client.id !== config.clientId) throw new Error('This OAuth client is not configured for Web Comments.');
       card.append(element('h2','Connect ChatGPT'),
         element('p',`Allow ${data.client.name} to read your saved pages and comments and write replies to @AI questions.`),
-        element('p',`Signed in as ${session.user.app_metadata.web_comments_username ?? data.user.email}`));
+        element('p',`Signed in as ${data.user.email}`));
       const actions=element('div');actions.className='actions';
       const approve=element('button','Allow');approve.className='primary';
       const deny=element('button','Deny');

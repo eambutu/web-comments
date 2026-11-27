@@ -4,11 +4,16 @@ import type { Message, Thread } from './model';
 export function sampleComments():CommentStore {
   const threads:Thread[] = [];
   const messages:Message[] = [];
+  const listeners = new Set<()=>void>();
   const page = {page_id:crypto.randomUUID(),version_id:crypto.randomUUID()};
 
   return {
     async read() { return {threads:[...threads],messages:[...messages]}; },
     async save() { return page; },
+    subscribe(refresh) {
+      listeners.add(refresh);
+      return ()=>{listeners.delete(refresh);};
+    },
     async add({thread,anchor,body,id}) {
       if (messages.some(message => message.id === id)) return;
       let target = threads.find(item => item.id === thread);
@@ -31,6 +36,7 @@ export function sampleComments():CommentStore {
           : 'The field notes suggest walking the same route at midday and in the late afternoon. Comparing where people wait tells you where shade would help most.';
         messages.push({id:crypto.randomUUID(),thread_id:question.thread_id,role:'assistant',body,question:false,reply_to:question.id});
       }
+      for (const refresh of listeners) refresh();
     },
   };
 

@@ -12,9 +12,9 @@ const bundle = (entryPoints, outdir, options={}) => build({
   logLevel:'warning',...options,
 });
 await Promise.all([
-  bundle(['src/background.ts','src/content.ts'],'dist/extension',{format:'iife'}),
+  bundle(['src/background.ts','src/content.ts'],'dist/extension',{format:'iife',define}),
   bundle(['src/panel.tsx','src/viewer.ts'],'dist/extension',{format:'esm',define}),
-  bundle(['src/web.ts','src/playground.tsx'],'dist/web/assets',{format:'esm',define}),
+  bundle(['src/web.ts','src/playground.tsx'],'dist/web/assets',{format:'esm',define,splitting:true}),
   bundle(['server/index.ts'],'dist',{target:'node22',platform:'node',format:'esm',packages:'external',entryNames:'server'}),
   bundle(['server/review.ts'],'dist',{target:'node22',platform:'node',format:'esm',packages:'external'}),
   cp('node_modules/pdfjs-dist/build/pdf.worker.mjs','dist/extension/pdf.worker.mjs'),
@@ -28,6 +28,11 @@ await Promise.all([
   cp('src/viewer.html','dist/extension/viewer.html'),
   cp('src/web.html','dist/web/index.html'),
   cp('src/playground.html','dist/web/playground.html'),
+  cp('src/urban-shade.pdf','dist/web/assets/urban-shade.pdf'),
+  cp('node_modules/pdfjs-dist/build/pdf.worker.mjs','dist/web/assets/pdf.worker.mjs'),
+  cp('node_modules/pdfjs-dist/cmaps','dist/web/assets/cmaps',{recursive:true}),
+  cp('node_modules/pdfjs-dist/standard_fonts','dist/web/assets/standard_fonts',{recursive:true}),
+  cp('node_modules/pdfjs-dist/LICENSE','dist/web/assets/PDFJS-LICENSE'),
   cp('src/styles.css','dist/web/assets/styles.css'),
 ]);
 

@@ -3,9 +3,9 @@ import { createRoot } from 'react-dom/client';
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import './styles.css';
 import { defaultServerOrigin, errorText, extensionClient, loadConfig, type Config } from './client';
-import { AccountForm } from './account-form';
 import { savedComments, type CommentStore } from './comment-store';
 import { DocumentPanel, type DocumentView } from './document-panel';
+import { BrowserSignIn, SidePanel } from './side-panel';
 import type { Capture, Thread } from './model';
 
 function App() {
@@ -34,7 +34,16 @@ function App() {
       setSession(current);
       setLoaded(true);
     });
-    return () => subscription.unsubscribe();
+    function sessionUpdated(message:{type?:string}) {
+      if (message?.type==='wc-session-updated') {
+        void db!.auth.getSession().then(({data})=>setSession(data.session));
+      }
+    }
+    chrome.runtime.onMessage.addListener(sessionUpdated);
+    return () => {
+      subscription.unsubscribe();
+      chrome.runtime.onMessage.removeListener(sessionUpdated);
+    };
   },[db]);
   async function act(fn:()=>Promise<void>) {
     setBusy(true); setStatus('');
@@ -50,23 +59,28 @@ function App() {
       setConfig(next);
     });
   }
-  return <main className="shell">
-    <header className="brand"><span aria-hidden="true">WC</span><h1>Web Comments</h1>{db && session && <button className="subtle" onClick={() => void act(async () => {
-      const {error} = await db.auth.signOut();
-      if (error) throw error;
-    })}>Sign out</button>}</header>
+  function openSignIn(signUp:boolean) {
+    void act(async () => {
+      const result=await chrome.runtime.sendMessage({type:'wc-open-sign-in',signUp});
+      if (!result?.ok) throw new Error('Could not open the sign-in tab.');
+    });
+  }
+  return <SidePanel standalone busy={busy} onSignOut={db && session ? () => void act(async () => {
+    const {error} = await db.auth.signOut();
+    if (error) throw error;
+  }) : undefined}>
     {!loaded ? <p>Loading…</p>
       : !db || !config ? <form onSubmit={submit} className="card stack">
         <h2>Connect your server</h2>
         <label>Server address<input name="server" type="url" defaultValue={defaultServerOrigin} placeholder="https://…" required /></label>
         <button className="primary" disabled={busy}>{busy ? 'Working…' : 'Connect'}</button>
       </form>
-      : !session ? <AccountForm db={db} origin={config.origin} backLabel="Change server" onBack={() => void act(async () => {
+      : !session ? <BrowserSignIn busy={busy} onOpen={openSignIn} onChangeServer={()=>void act(async ()=>{
         await chrome.storage.local.remove('wcConfig');setConfig(null);
       })}/>
       : <Workspace key={session.user.id} db={db} owner={session.user.id} origin={config.origin}/>}
     {status && <p className="status" role="status">{status}</p>}
-  </main>;
+  </SidePanel>;
 }
 
 type View = {id:number; tabUrl:string; source:string; title:string; pdf:boolean};
@@ -131,7 +145,7 @@ function ChromeDocument({store,origin,view}:{store:CommentStore;origin:string;vi
       view.pdf?'wc-pdf-highlights':'wc-html-highlights',{threads,focus}),
     openAsPdf:view.pdf ? undefined : () => void chrome.tabs.update(view.id,{url:`${viewer}?url=${encodeURIComponent(view.source)}`}),
   }),[view]);
-  return <DocumentPanel store={store} shareOrigin={origin} view={page}/>;
+  return <DocumentPanel store={store} pageLink={id=>origin+'/p/'+id} view={page}/>;
 }
 
 createRoot(document.getElementById('app')!).render(<App/>);

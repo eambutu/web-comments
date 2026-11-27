@@ -24,3 +24,10 @@
   .playground-header { grid-template-columns:1fr; }
   .playground-modes { margin-top:.25rem; }
 }
+.playground-demo { display:flex; align-items:center; justify-content:space-between; gap:.65rem 1rem; flex-wrap:wrap; margin-bottom:.85rem; color:#395b52; }
+.playground-panel { background:#f0f5f4; }
+.playground-panel .side-panel { height:100%; }
+.playground-pdf { background:#19252d; border-radius:8px; margin-top:1rem; min-width:0; }
+.playground-pdf > p { padding:.8rem 1rem 0; color:#e7eef1; }
+.playground-pdf .pdf-pages { min-width:0; }
+.playground-pdf .sheet { max-width:none; }

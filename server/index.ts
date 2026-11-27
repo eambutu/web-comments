@@ -44,50 +44,41 @@ app.get('/config.json', (_req,res) => {
   res.set('Cache-Control','no-store');
   res.json({supabaseUrl,publishableKey,origin,clientId});
 });
-app.post(['/auth/signup','/auth/username-login'], async (req,res) => {
+// Keep older clients able to sign into accounts created with usernames.
+app.post('/auth/username-login', async (req,res) => {
   res.set('Cache-Control','no-store');
-  const action = req.path === '/auth/signup' ? 'signup' : 'username-login';
   const input = accountInput.safeParse(req.body);
-  if (!input.success || (action === 'signup' && input.data.password.length < 12)) {
-    const error = action === 'signup'
-      ? 'Use 3–32 characters for your username. Start with a letter and use letters, numbers, underscores or hyphens. Choose a password of at least 12 characters and at most 72 bytes.'
-      : 'Invalid username or password.';
-    res.status(400).json({error});
+  if (!input.success) {
+    res.status(400).json({error:'Invalid username or password.'});
     return;
   }
   const response = await fetch(supabaseUrl+'/functions/v1/web-comments-enroll',{
     method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({action,...input.data}),signal:AbortSignal.timeout(15000),
+    body:JSON.stringify({action:'username-login',...input.data}),signal:AbortSignal.timeout(15000),
   }).catch(() => null);
-  if (action === 'signup' && response?.status === 201) {
-    res.status(201).json({ok:true});
-  } else if (action === 'username-login' && response?.status === 200) {
+  if (response?.status === 200) {
     const tokens = await response.json().catch(() => null);
     if (typeof tokens?.access_token === 'string' && typeof tokens?.refresh_token === 'string') {
       res.json({access_token:tokens.access_token,refresh_token:tokens.refresh_token});
-    } else {
-      res.status(502).json({error:'Sign-in is temporarily unavailable. Try again shortly.'});
+      return;
     }
   } else if (response?.status === 401) {
     res.status(401).json({error:'Invalid username or password.'});
-  } else if (response?.status === 409) {
-    res.status(409).json({error:'That username is taken. Choose another.'});
-  } else if (response?.status === 422) {
-    res.status(422).json({error:'Choose a stronger password.'});
+    return;
   } else if (response?.status === 429) {
     res.status(429).json({error:'Too many attempts. Try again in a few minutes.'});
-  } else {
-    res.status(502).json({error:'Account access is temporarily unavailable. Try again shortly.'});
+    return;
   }
+  res.status(502).json({error:'Sign-in is temporarily unavailable. Try again shortly.'});
 });
 app.use('/assets', express.static(fileURLToPath(new URL('./web/assets/',import.meta.url))));
 app.get('/downloads/chrome-extension.zip', (_req,res) => {
   res.download(fileURLToPath(new URL('./web/chrome-extension.zip',import.meta.url)),'web-comments-chrome-extension.zip');
 });
-app.get(['/oauth/consent','/playground','/signup','/p/:id','/'], (req,res) => {
-  if (req.path === '/signup') res.set('Cache-Control','no-store');
+app.get(['/oauth/consent','/playground','/signup','/sign-in','/extension/sign-in','/p/:id','/'], (req,res) => {
+  if (/\/(?:sign-in|signup)\/?$/.test(req.path)) res.set('Cache-Control','no-store');
   const realtime = supabaseUrl.replace(/^http(s?):/, 'ws$1:');
-  res.set('Content-Security-Policy', `default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; connect-src ${supabaseUrl} ${realtime} 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`);
+  res.set('Content-Security-Policy', `default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; worker-src 'self'; connect-src ${supabaseUrl} ${realtime} 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`);
   res.set('Referrer-Policy','no-referrer');
   const page = req.path.replace(/\/$/,'') === '/playground' ? 'playground.html' : 'index.html';
   res.sendFile(fileURLToPath(new URL('./web/'+page,import.meta.url)));

@@ -3,7 +3,7 @@ export type PDFAnchor = { kind:'pdf'; exact:string; page:number; binaryHash:stri
 export type Anchor = HTMLAnchor | PDFAnchor;
 export type Capture = {
   url:string; title:string; text:string; kind:'html'|'pdf'; complete:boolean;
-  note:string; anchor:Anchor|null; binaryHash?:string; pdfPath?:string;
+  note:string; anchor:Anchor|null; binaryHash?:string; pdfPath?:string; pdfBlob?:Blob;
 };
 export type Thread = {id:string; version_id:string; anchor:Anchor; resolved:boolean};
 export type Message = {id:string; thread_id:string; body:string; role:'user'|'assistant'; question:boolean; reply_to:string|null};

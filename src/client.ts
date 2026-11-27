@@ -21,40 +21,37 @@ export async function loadConfig(address:string):Promise<Config> {
   if (config.origin !== origin || !config.publishableKey || !config.supabaseUrl) throw new Error('Invalid server configuration.');
   return config;
 }
-export function extensionClient(config:Config) {
+export function extensionClient(config:Config, autoRefreshToken=true) {
   return createClient(config.supabaseUrl,config.publishableKey,{
-    auth:{storage:{
+    auth:{autoRefreshToken,storage:{
       getItem:async key => ((await chrome.storage.local.get(key))[key] as string | undefined) ?? null,
       setItem:async (key,value) => { await chrome.storage.local.set({[key]:value}); },
       removeItem:async key => { await chrome.storage.local.remove(key); },
     }},
   });
 }
-async function accountRequest(origin:string,action:'signup'|'username-login',login:string,password:string) {
-  const response = await fetch(origin+'/auth/'+action,{
-    method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({login,password}),
+export async function signUpAccount(db:SupabaseClient, origin:string, email:string, password:string) {
+  if (password.length < 12 || new TextEncoder().encode(password).byteLength > 72) {
+    throw new Error('Use at least 12 characters and at most 72 bytes for your password.');
+  }
+  const {data,error} = await db.auth.signUp({
+    email:email.trim().toLowerCase(),password,
+    options:{emailRedirectTo:origin+'/sign-in'},
   });
-  const data = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(data?.error || 'Could not reach your Web Comments account.');
-  return data;
-}
-export async function signUpAccount(origin:string,username:string,password:string) {
-  await accountRequest(origin,'signup',username.trim().toLowerCase(),password);
-}
-export async function signInAccount(db:SupabaseClient,origin:string,login:string,password:string) {
-  const name = login.trim().toLowerCase();
-  if (name.includes('@')) {
-    const {error} = await db.auth.signInWithPassword({email:name,password});
-    if (error) throw error;
-    return;
+  if (error?.code === 'email_address_not_authorized' || error?.code === 'unexpected_failure') {
+    throw new Error('Confirmation emails are currently unavailable. Try again once email delivery is set up.');
   }
-  const tokens = await accountRequest(origin,'username-login',name,password);
-  if (typeof tokens?.access_token !== 'string' || typeof tokens?.refresh_token !== 'string') {
-    throw new Error('The server did not return a valid sign-in session.');
-  }
-  const {error} = await db.auth.setSession(tokens);
   if (error) throw error;
+  return data.session;
+}
+export async function signInAccount(db:SupabaseClient,email:string,password:string) {
+  const {data,error} = await db.auth.signInWithPassword({email:email.trim().toLowerCase(),password});
+  if (error?.code === 'email_not_confirmed') {
+    throw new Error('Confirm your email using the link we sent, then sign in.');
+  }
+  if (error) throw error;
+  if (!data.session) throw new Error('Could not start a sign-in session.');
+  return data.session;
 }
 export async function upload(db:SupabaseClient, path:string, content:Blob) {
   const {error} = await db.storage.from('web-comments').upload(path,content,{upsert:false});
@@ -69,10 +66,15 @@ export async function saveCapture(db:SupabaseClient, owner:string, capture:Captu
   const file = new Blob([capture.text],{type:'text/plain;charset=utf-8'});
   const path = file.size > 512_000 ? `${owner}/${documentHash}.txt` : null;
   if (path) await upload(db,path,file);
+  let pdfPath=capture.pdfPath;
+  if (capture.pdfBlob && capture.binaryHash && !pdfPath) {
+    pdfPath=`${owner}/${capture.binaryHash}.pdf`;
+    await upload(db,pdfPath,capture.pdfBlob);
+  }
   const {data,error} = await db.rpc('wc_capture',{
     source:capture.url,document_title:capture.title,document_kind:capture.kind,
     document_hash:documentHash,capture_fingerprint:fingerprint,is_complete:capture.complete,note:capture.note,
-    document_text:path ? null : capture.text,snapshot_path:path,binary_path:capture.pdfPath ?? null,
+    document_text:path ? null : capture.text,snapshot_path:path,binary_path:pdfPath ?? null,
   });
   if (error) throw error;
   return data as {page_id:string;version_id:string};

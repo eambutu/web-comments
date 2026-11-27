@@ -8,7 +8,7 @@ const publishable = JSON.parse(Deno.env.get('SUPABASE_PUBLISHABLE_KEYS') ?? '{}'
 const auth = {persistSession:false,autoRefreshToken:false};
 const admin = createClient(url,secret,{auth});
 
-function respond(status:number, body:object = {ok:status === 201}) {
+function respond(status:number, body:object = {ok:false}) {
   return Response.json(body,{status,headers:{'Cache-Control':'no-store'}});
 }
 
@@ -37,28 +37,10 @@ Deno.serve(async request => {
   const {action,login,password} = body as Record<string,unknown>;
   if (typeof login !== 'string' || !/^[a-z][a-z0-9_-]{2,31}$/.test(login)
       || typeof password !== 'string' || !password.length || new TextEncoder().encode(password).length > 72
-      || (action !== 'signup' && action !== 'username-login')) return respond(400);
+      || action !== 'username-login') return respond(400);
 
-  const lookup = () => admin.rpc('wc_email_for_username',{p_username:login});
-  const {data:email,error:lookupError} = await lookup();
+  const {data:email,error:lookupError} = await admin.rpc('wc_email_for_username',{p_username:login});
   if (lookupError) return respond(503);
-
-  if (action === 'signup') {
-    if (password.length < 12) return respond(400);
-    if (email) return respond(409);
-    const alias = crypto.randomUUID()+'@accounts.web-comments.invalid';
-    const {error} = await admin.auth.admin.createUser({
-      email:alias,
-      password,email_confirm:true,app_metadata:{web_comments_username:login},
-    });
-    if (error?.status === 429) return respond(429);
-    if (error?.code === 'weak_password') return respond(422);
-    // Verify that Auth attached the username. A concurrent registration may have claimed it.
-    const {data:mappedEmail} = await lookup();
-    if (!error && mappedEmail === alias) return respond(201);
-    if (mappedEmail) return respond(409);
-    return respond(503);
-  }
 
   if (typeof email !== 'string' || !email) return respond(401);
   const db = createClient(url,publishable,{auth});
