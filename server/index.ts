@@ -5,6 +5,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { z } from 'zod';
 import { createReviewServer } from './review';
 import { ImportError, importDocument } from './import-document';
+import { archivePolicy } from '../shared/article-archive';
 
 function env(key: string) {
   const value = process.env[key];
@@ -85,7 +86,7 @@ app.post('/api/import', async (req,res) => {
     res.status(401).json({error:'Sign in with a confirmed email to import a document.'});
     return;
   }
-  const input=z.object({url:z.string().trim().min(1).max(2048)}).safeParse(req.body);
+  const input=z.object({url:z.string().trim().min(1).max(2048),archive:z.boolean().optional()}).safeParse(req.body);
   if (!input.success) {
     res.status(400).json({error:'Enter a public article or PDF link.'});
     return;
@@ -96,7 +97,7 @@ app.post('/api/import', async (req,res) => {
   }
   activeImports.add(user.id);
   try {
-    const result=await importDocument(input.data.url);
+    const result=await importDocument(input.data.url,input.data.archive);
     if (result.kind==='pdf') {
       res.type('application/pdf').set('X-Web-Comments-Source',result.url).send(result.body);
     } else res.json(result);
@@ -108,6 +109,11 @@ app.post('/api/import', async (req,res) => {
   }
 });
 app.use('/assets', express.static(fileURLToPath(new URL('./web/assets/',import.meta.url))));
+app.get('/archive-frame',(_req,res)=>{
+  res.set('Content-Security-Policy',archivePolicy+"; sandbox allow-same-origin; frame-ancestors 'self'");
+  res.set('Referrer-Policy','no-referrer');
+  res.type('html').send('<!doctype html><html><head><meta charset="utf-8"></head><body></body></html>');
+});
 app.get('/downloads/chrome-extension.zip', (_req,res) => {
   res.download(fileURLToPath(new URL('./web/chrome-extension.zip',import.meta.url)),'web-comments-chrome-extension.zip');
 });
@@ -115,7 +121,7 @@ app.get(['/oauth/consent','/library','/playground','/signup','/sign-in','/extens
   if (/\/(?:sign-in|signup)\/?$/.test(req.path)) res.set('Cache-Control','no-store');
   const realtime = supabaseUrl.replace(/^http(s?):/, 'ws$1:');
   const path=req.path.replace(/\/$/,'');
-  const images=path==='/library'?'img-src data:; ':'';
+  const images=path==='/library'?"img-src data:; frame-src 'self'; ":'';
   res.set('Content-Security-Policy', `default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; worker-src 'self'; ${images} connect-src ${supabaseUrl} ${realtime} 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`);
   res.set('Referrer-Policy','no-referrer');
   const page=path==='/library'?'library.html':path==='/playground'?'playground.html':'index.html';

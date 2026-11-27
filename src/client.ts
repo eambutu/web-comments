@@ -1,5 +1,6 @@
 import { createClient, type AuthError, type SupabaseClient } from '@supabase/supabase-js';
-import { hash, type Capture } from './model';
+import { captureFingerprint, hash, type Capture } from './model';
+import { archivePath, type SavedArchive } from './archive-storage';
 
 declare const DEFAULT_WEB_COMMENTS_ORIGIN: string;
 export const defaultServerOrigin = DEFAULT_WEB_COMMENTS_ORIGIN;
@@ -83,11 +84,17 @@ export async function upload(db:SupabaseClient, path:string, content:Blob) {
     if (!existing.data) throw error;
   }
 }
-export async function saveCapture(db:SupabaseClient, owner:string, capture:Capture, snapshotHtml?:string|null) {
+export async function saveCapture(db:SupabaseClient, owner:string, capture:Capture, snapshotHtml?:string|null,archive?:SavedArchive) {
   const documentHash = await hash(capture.text);
-  const signature = [documentHash,capture.kind,capture.complete,capture.note,capture.binaryHash];
-  if (typeof snapshotHtml==='string') signature.push(await hash(snapshotHtml));
-  const fingerprint = await hash(JSON.stringify(signature));
+  const fingerprint=await captureFingerprint(documentHash,capture,snapshotHtml,archive?.digest);
+  if (archive) {
+    const path=archivePath(owner,fingerprint);
+    if (archive.path!==path) {
+      // Store immutable bytes before publishing the version, including on retries.
+      await upload(db,path,archive.file);
+      archive.path=path;
+    }
+  }
   const file = new Blob([capture.text],{type:'text/plain;charset=utf-8'});
   const path = file.size > 512_000 ? `${owner}/${documentHash}.txt` : null;
   if (path) await upload(db,path,file);

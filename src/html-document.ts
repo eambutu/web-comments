@@ -1,7 +1,9 @@
-import { locate, type Capture, type HTMLAnchor, type Thread } from './model';
+import { alignHtmlAnchor, locate, type Capture, type HTMLAnchor, type Thread } from './model';
 
 type Span = {node:Text; start:number; end:number};
 function collect(root:HTMLElement) {
+  const doc=root.ownerDocument;
+  const scope=doc.defaultView!;
   const spans:Span[] = [];
   const chunks:string[] = [];
   let offset = 0;
@@ -10,7 +12,7 @@ function collect(root:HTMLElement) {
   const issues = new Set<string>();
   const append = (text:string) => { chunks.push(text); offset += text.length; };
   function walk(node:Node, block:Element|null) {
-    if (node instanceof Text) {
+    if (node instanceof scope.Text) {
       if (!node.data.trim() && (!offset || block !== previousBlock || lineBreak)) return;
       if (!node.data.length) return;
       if (offset && (lineBreak || block !== previousBlock)) append('\n');
@@ -21,11 +23,11 @@ function collect(root:HTMLElement) {
       lineBreak = false;
       return;
     }
-    if (!(node instanceof Element)) return;
+    if (!(node instanceof scope.Element)) return;
     if (node.matches('script,style,noscript,template,svg,select,textarea,input,button,[hidden]')) return;
-    const css = getComputedStyle(node);
+    const css = scope.getComputedStyle(node);
     if (css.display === 'none' || css.visibility !== 'visible' || css.contentVisibility === 'hidden') return;
-    if (node instanceof HTMLBRElement) { lineBreak = true; return; }
+    if (node instanceof scope.HTMLBRElement) { lineBreak = true; return; }
     if (node.matches('iframe,frame,object,embed,canvas')) {
       const box = node.getBoundingClientRect();
       if (box.width > 1 && box.height > 1) issues.add('Visible embedded frames or canvas content was omitted.');
@@ -36,7 +38,7 @@ function collect(root:HTMLElement) {
       for (const child of node.shadowRoot.childNodes) walk(child,node);
       return;
     }
-    if (node instanceof HTMLImageElement && node.alt) {
+    if (node instanceof scope.HTMLImageElement && node.alt) {
       // Alternate text preserves image descriptions in the saved text.
       append(`\n[Image: ${node.alt}]\n`);
     }
@@ -46,8 +48,8 @@ function collect(root:HTMLElement) {
   walk(root,null);
   const text = chunks.join('');
   if (!text.trim()) issues.add('No readable document text was found.');
-  if (document.readyState !== 'complete') issues.add('The page was still loading.');
-  const busySelector = root === document.body ? 'main [aria-busy="true"], main[aria-busy="true"]' : '[aria-busy="true"]';
+  if (doc.readyState !== 'complete') issues.add('The page was still loading.');
+  const busySelector = root === doc.body ? 'main [aria-busy="true"], main[aria-busy="true"]' : '[aria-busy="true"]';
   if (root.matches('[aria-busy="true"]') || root.querySelector(busySelector)) {
     issues.add('The document reports that content is still loading.');
   }
@@ -65,30 +67,34 @@ function currentAnchor(text:string, spans:Span[], range:Range|null):HTMLAnchor|n
   if (!exact.trim() || exact.length > 6000) return null;
   return {kind:'html', exact,start,end,prefix:text.slice(Math.max(0,start-100),start),suffix:text.slice(end,end+100)};
 }
-function highlight(root:HTMLElement, threads:Thread[], focus?:string) {
+function highlight(root:HTMLElement, threads:Thread[], focus?:string,acrossLayouts=false) {
+  const doc=root.ownerDocument;
+  const scope=doc.defaultView!;
   const {text,spans} = collect(root);
   const missing:string[] = [];
   const ranges:Range[] = [];
   for (const thread of threads) {
     if (thread.anchor.kind !== 'html') { missing.push(thread.id); continue; }
-    const start = locate(text,thread.anchor);
-    const end = start+thread.anchor.exact.length;
+    const aligned=acrossLayouts?alignHtmlAnchor(text,thread.anchor):null;
+    const start=acrossLayouts?aligned?.start ?? -1:locate(text,thread.anchor);
+    const end=aligned?.end ?? start+thread.anchor.exact.length;
     const first = spans.find(span => span.start <= start && start < span.end);
     const last = spans.find(span => span.start < end && end <= span.end);
     if (!first || !last || first.node.getRootNode() !== last.node.getRootNode()) { missing.push(thread.id); continue; }
-    const range = document.createRange();
+    const range = doc.createRange();
     range.setStart(first.node,start-first.start);
     range.setEnd(last.node,end-last.start);
     ranges.push(range);
     if (thread.id === focus) first.node.parentElement?.scrollIntoView({block:'center',behavior:'smooth'});
   }
-  CSS.highlights.set('web-comments',new Highlight(...ranges));
+  scope.CSS.highlights.set('web-comments',new scope.Highlight(...ranges));
   return missing;
 }
 export function htmlDocument(root:HTMLElement, source:() => {url:string;title:string}) {
+  const doc=root.ownerDocument;
   let retained: {url:string;range:Range}|null = null;
   function selectedRange() {
-    const selection = window.getSelection();
+    const selection = doc.getSelection();
     if (!selection || !selection.rangeCount) return null;
     const range = selection.getRangeAt(0);
     return root.contains(range.startContainer) && root.contains(range.endContainer) ? range : null;
@@ -97,11 +103,11 @@ export function htmlDocument(root:HTMLElement, source:() => {url:string;title:st
     const range = selectedRange();
     if (range && !range.collapsed) {
       retained = {url:source().url,range:range.cloneRange()};
-    } else if (document.hasFocus() && (range || root === document.body)) {
+    } else if (doc.hasFocus() && (range || root === doc.body)) {
       retained = null;
     }
   }
-  document.addEventListener('selectionchange',rememberSelection);
+  doc.addEventListener('selectionchange',rememberSelection);
   return {
     capture():Capture {
       const {text,spans,issues} = collect(root);
@@ -111,7 +117,7 @@ export function htmlDocument(root:HTMLElement, source:() => {url:string;title:st
       return {url,title,text,kind:'html',complete:issues.size === 0,note:[...issues].join(' '),
         anchor:currentAnchor(text,spans,range)};
     },
-    highlight:(threads:Thread[],focus?:string) => highlight(root,threads,focus),
-    dispose:() => document.removeEventListener('selectionchange',rememberSelection),
+    highlight:(threads:Thread[],focus?:string,acrossLayouts=false) => highlight(root,threads,focus,acrossLayouts),
+    dispose:() => doc.removeEventListener('selectionchange',rememberSelection),
   };
 }

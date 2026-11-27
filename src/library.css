@@ -79,3 +79,11 @@
   .library-header h1 { padding-left:.45rem; }
   .library-header-actions { gap:.5rem; }
 }
+.article-layouts { display:flex; align-items:center; flex-wrap:wrap; gap:.4rem; padding:.6rem clamp(1rem,4vw,2.75rem); border-bottom:1px solid #e3e4d8; }
+.article-layouts button[aria-pressed="true"] { color:#fff; background:#285c50; border-color:#285c50; }
+.article-layouts small,.archive-status { color:#536e65; }
+.archive-status { padding:.6rem 1rem; }
+.article-archive { width:100%; height:calc(100dvh - 13rem); min-height:22rem; display:block; border:0; background:white; }
+.article-archive[hidden] { display:none; }
+/* Keep canonical text measurable for version hashes and comment offsets in either view. */
+.archive-reader-copy { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); pointer-events:none; }

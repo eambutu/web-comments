@@ -15,7 +15,7 @@ Web Comments lets you save a webpage or PDF, annotate a passage, and keep the di
 3. Select a passage in the middle and click **Comment on selection** on the right. Write a comment and click **Post comment**. Click a thread’s quotation to jump to its passage. Use **Reply** to continue the discussion or **Resolve** to close the thread.
 4. Use **Copy link** for the saved Web Comments page or **Copy ID** for its identifier. Both actions save the displayed document version. Page links and IDs require access to the account’s data.
 
-The library preserves readable HTML structure or a private copy of the PDF. HTML imports preserve supported images as offline copies and link to embedded media on the source page. Public import can fail when a site requires a browser login, loads the article with JavaScript, or restricts automated downloads. Use the original source link to refer back to the publisher.
+The library preserves readable HTML structure or a private copy of the PDF. New HTML imports also offer **Saved layout**, which displays a private bundle of the publisher’s markup, styles, fonts, and images. Switch between **Reader** and **Saved layout** to annotate a passage. Open the original for video playback and interactive widgets. To add a saved layout to an older reader snapshot, import its URL again. Public import can fail when a site requires a browser login, loads the article with JavaScript, or restricts automated downloads. Use the original source link to refer back to the publisher.
 
 ## Try the playground
 
@@ -59,9 +59,11 @@ Generate standalone reader pages and a report using the Library's importer, brow
 
 ```sh
 npm run import:preview -- https://example.org/article https://example.org/another
-npm run import:preview -- --screenshot --browser /path/to/chromium --focus 'figure:has(img)' https://example.org/article
+npm run import:preview -- --archive --screenshot --browser /path/to/chromium --focus 'figure:has(img)' https://example.org/article
 ```
 
-Open `dist/import-previews/index.html` for the pages, screenshots, and measurements. Choose a separate directory with `--out` to keep screenshots from earlier runs. Use `--source captured.html --images captured-images` with one URL to replay a fixed capture offline. The image directory holds same-site assets under their original filenames. With a captured source, `--archive` also renders the publisher's inline CSS, HTML, and provided images in a scriptless sandboxed iframe for comparison. The archive prototype leaves linked stylesheets and live embeds out of the bundle.
+Open `dist/import-previews/index.html` for the pages, screenshots, and measurements. Choose a separate directory with `--out` to keep screenshots from earlier runs. Use `--archive` to compare the reader and saved layout for a live URL or a fixed capture. To replay offline, pass `--source captured.html --assets directory` with the original URL. Organize captured resources as `directory/hostname/path/to/file`. The older `--images directory` option also accepts a flat folder of same-site images.
+
+Run `npm run test:archive` for the browser integration test. Set `CHROMIUM_PATH` to your Chromium executable when using a system installation. The test drives the built Library with a local account and Storage fixture, selects a passage in the saved layout, posts a comment, and checks both highlights after reopening.
 
 For importer changes, keep a set of representative captures. Compare the report and screenshots for each change, and add a regression assertion when a specific structure is lost. The screenshot run checks that the browser decoded every embedded image and that each saved fragment points to a target.

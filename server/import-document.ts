@@ -7,7 +7,9 @@ import { parseHTML } from 'linkedom';
 import ipaddr from 'ipaddr.js';
 import { articleTags } from '../shared/article-html';
 import { articleLayout } from './article-layout';
-import { articleImageData, maxArticleImageBytes } from './article-image';
+import { articleImageData, inlineSvg, maxArticleImageBytes } from './article-image';
+import { bundleArticle, type LoadAsset, type AssetKind, type ArchiveAsset } from './article-archive';
+import type { ArticleArchive } from '../shared/article-archive';
 
 const maxBytes=24*1024*1024;
 const maxHtml=3*1024*1024;
@@ -91,21 +93,6 @@ function publicLink(value:string|null,url:URL) {
         link.href.length<=2048) return link;
   } catch {}
   return null;
-}
-
-function inlineSvg(element:Element) {
-  const svg=element.cloneNode(true) as Element;
-  // Render standalone vector figures as bitmap images. Only local SVG references are needed.
-  svg.querySelectorAll('script,foreignObject,style,animate,animateMotion,animateTransform,set').forEach(node=>node.remove());
-  for (const node of [svg,...svg.querySelectorAll('*')]) {
-    for (const {name,value} of Array.from(node.attributes)) {
-      if (/^on/i.test(name) || (/^(?:xlink:)?href$/i.test(name) && !value.startsWith('#')) ||
-          /url\s*\(/i.test(value) && !/^url\(#[\w.-]+\)$/.test(value)) node.removeAttribute(name);
-    }
-  }
-  svg.setAttribute('xmlns','http://www.w3.org/2000/svg');
-  const bytes=Buffer.from(svg.outerHTML);
-  return bytes.length<=480000 ? bytes : null;
 }
 
 function structuralAttributes(element:Element,tag:string) {
@@ -313,16 +300,52 @@ async function download(
   throw new ImportError('The source redirected too many times.');
 }
 
-async function fetchArticleImage(url:URL,signal:AbortSignal) {
-  const {body}=await download(importUrl(url.href),signal,'image/avif,image/webp,image/png,image/jpeg,image/gif',type=>{
-    if (!imageContentType.test(type)) throw new ImportError('The source did not return a supported image.');
-    return maxArticleImageBytes;
-  });
-  return body;
+const acceptAsset:Record<AssetKind,string>={
+  image:'image/avif,image/webp,image/png,image/jpeg,image/gif,image/svg+xml',
+  style:'text/css',
+  font:'font/woff2,font/woff,font/ttf,font/otf,application/octet-stream;q=0.5',
+};
+
+function loadPublicAssets(signal:AbortSignal):LoadAsset {
+  let total=0;
+  let accounted=Promise.resolve();
+  const cached=new Map<string,Promise<ArchiveAsset|null>>();
+  return async (url,kind)=>{
+    const key=kind+' '+url.href;
+    let item=cached.get(key);
+    if (!item && cached.size<80 && total<16*1024*1024 && !signal.aborted) {
+      const pending=download(importUrl(url.href),signal,acceptAsset[kind],type=>{
+        if ((kind==='image' && !imageContentType.test(type) && type!=='image/svg+xml') || (kind==='style' && type!=='text/css') ||
+            (kind==='font' && !/^(font\/|application\/(?:font|x-font|octet-stream|vnd\.ms-fontobject))/.test(type))) {
+          throw new ImportError('Unsupported article asset.');
+        }
+        return kind==='image'?maxArticleImageBytes:kind==='style'?512000:1024*1024;
+      }).catch(()=>null);
+      // Downloads run concurrently. Assign the budget in request order so slow
+      // figures have the same priority across repeated captures.
+      item=accounted.then(async ()=>{
+        const asset=await pending;
+        if (!asset) return null;
+        total+=asset.body.length;
+        return total<=16*1024*1024?asset:null;
+      });
+      accounted=item.then(()=>{});
+      cached.set(key,item);
+    }
+    return await item ?? null;
+  };
+}
+
+export async function articleSnapshots(source:string,url:URL,load:LoadAsset,includeArchive:boolean) {
+  const reader=await cleanArticle(source,url,async asset=>(await load(asset,'image'))?.body ?? null);
+  let archive:ArticleArchive|null=null;
+  // Optional archive assets and malformed publisher CSS must not suppress a usable reader.
+  if (includeArchive) archive=await bundleArticle(source,url,load).catch(()=>null);
+  return {...reader,archive};
 }
 
 const htmlContentTypes=['text/html','application/xhtml+xml','text/plain'];
-export async function importDocument(input:string) {
+export async function importDocument(input:string,includeArchive=false) {
   const url=importUrl(input);
   const signal=AbortSignal.timeout(25000);
   try {
@@ -332,11 +355,11 @@ export async function importDocument(input:string) {
     if (body.subarray(0,1024).includes('%PDF-')) return {kind:'pdf' as const,url:source.href,body};
     if (contentType==='application/pdf') throw new ImportError('The source returned a damaged or unsupported PDF.');
     if (htmlContentTypes.includes(contentType) || (body[0]===60 && body.length<=maxHtml)) {
-      if (contentType==='text/plain') return await cleanArticle('<article><pre>'+escape(body.toString('utf8'))+'</pre></article>',source);
+      if (contentType==='text/plain') return {...await cleanArticle('<article><pre>'+escape(body.toString('utf8'))+'</pre></article>',source),archive:null};
       let decoder=new TextDecoder();
       try { if (charset) decoder=new TextDecoder(charset); } catch {}
-      const imageSignal=AbortSignal.any([signal,AbortSignal.timeout(8500)]);
-      return await cleanArticle(decoder.decode(body),source,image=>fetchArticleImage(image,imageSignal));
+      const assetSignal=AbortSignal.any([signal,AbortSignal.timeout(includeArchive?16000:8500)]);
+      return await articleSnapshots(decoder.decode(body),source,loadPublicAssets(assetSignal),includeArchive);
     }
     throw new ImportError('Use a public HTML page or a direct PDF link.');
   } catch (error) {
