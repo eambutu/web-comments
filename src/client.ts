@@ -1,6 +1,6 @@
 import { createClient, type AuthError, type SupabaseClient } from '@supabase/supabase-js';
 import { captureFingerprint, hash, type Capture } from './model';
-import { archivePath, type SavedArchive } from './archive-storage';
+import type { ArticleMode } from '../shared/article-mode';
 
 declare const DEFAULT_WEB_COMMENTS_ORIGIN: string;
 export const defaultServerOrigin = DEFAULT_WEB_COMMENTS_ORIGIN;
@@ -10,6 +10,7 @@ export type Config = {
   publishableKey:string;
   origin:string;
   clientId:string|null;
+  articleMode?:ArticleMode;
 };
 export async function loadConfig(address:string):Promise<Config> {
   const origin = new URL(address).origin;
@@ -84,17 +85,11 @@ export async function upload(db:SupabaseClient, path:string, content:Blob) {
     if (!existing.data) throw error;
   }
 }
-export async function saveCapture(db:SupabaseClient, owner:string, capture:Capture, snapshotHtml?:string|null,archive?:SavedArchive) {
-  const documentHash = await hash(capture.text);
-  const fingerprint=await captureFingerprint(documentHash,capture,snapshotHtml,archive?.digest);
-  if (archive) {
-    const path=archivePath(owner,fingerprint);
-    if (archive.path!==path) {
-      // Store immutable bytes before publishing the version, including on retries.
-      await upload(db,path,archive.file);
-      archive.path=path;
-    }
-  }
+export type ImportRecord={html:string|null;identity?:{contentHash:string;fingerprint:string}};
+
+export async function saveCapture(db:SupabaseClient, owner:string, capture:Capture, record?:ImportRecord) {
+  const documentHash=record?.identity?.contentHash ?? await hash(capture.text);
+  const fingerprint=record?.identity?.fingerprint ?? await captureFingerprint(documentHash,capture,record?.html);
   const file = new Blob([capture.text],{type:'text/plain;charset=utf-8'});
   const path = file.size > 512_000 ? `${owner}/${documentHash}.txt` : null;
   if (path) await upload(db,path,file);
@@ -103,11 +98,11 @@ export async function saveCapture(db:SupabaseClient, owner:string, capture:Captu
     pdfPath=`${owner}/${capture.binaryHash}.pdf`;
     await upload(db,pdfPath,capture.pdfBlob);
   }
-  const {data,error} = await db.rpc(snapshotHtml===undefined?'wc_capture':'wc_save_import',{
+  const {data,error} = await db.rpc(record?'wc_save_import':'wc_capture',{
     source:capture.url,document_title:capture.title,document_kind:capture.kind,
     document_hash:documentHash,capture_fingerprint:fingerprint,is_complete:capture.complete,note:capture.note,
     document_text:path ? null : capture.text,snapshot_path:path,binary_path:pdfPath ?? null,
-    ...(snapshotHtml===undefined?{}:{snapshot_html:snapshotHtml}),
+    ...(record?{snapshot_html:record.html}:{}),
   });
   if (error) throw error;
   return data as {page_id:string;version_id:string};

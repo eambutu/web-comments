@@ -86,8 +86,9 @@ try {
     rows.push(row);
     try {
       const url=importUrl(input);
-      const result=original===null?await importDocument(url.href,values.archive):
-        await articleSnapshots(original,url,(asset,kind)=>localAsset(asset,kind,url),!!values.archive);
+      const mode=values.archive?'both':'reader';
+      const result=original===null?await importDocument(url.href,mode):
+        await articleSnapshots(original,url,(asset,kind)=>localAsset(asset,kind,url),mode);
       if (result.kind!=='html') throw Error('The URL returned a PDF. This preview exercises the HTML reader.');
       const slug=(basename(url.pathname,extname(url.pathname)) || url.hostname).toLowerCase().replace(/[^a-z0-9-]+/g,'-').slice(0,65);
       const name=String(index+1).padStart(2,'0')+'-'+slug;

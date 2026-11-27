@@ -70,12 +70,19 @@ For a remote development project, use its API URL and publishable key in the sam
 | `SUPABASE_PUBLISHABLE_KEY` | Server startup and browser clients | The public publishable key or legacy anon key. `/config.json` exposes this value by design. |
 | `PUBLIC_ORIGIN` | Build and server startup | The exact origin where users open Web Comments. Production uses HTTPS. Local development can use HTTP on `localhost` or `127.0.0.1`. |
 | `RENDER_EXTERNAL_URL` | Build and server startup | Render supplies this automatically. The app uses it when `PUBLIC_ORIGIN` is empty. |
+| `ARTICLE_LAYOUT_MODE` | Server startup and library | `both` (default) enables the in-document switch. `reader` runs only the Reader importer. `archive` runs only the Saved layout importer. |
 | `PORT` | Server startup | The listening port. Defaults to `8787`. Render supplies its own value. |
 | `MCP_OAUTH_CLIENT_ID` | Server startup | The registered Supabase OAuth client ID for the ChatGPT app. Required for live MCP access. |
 
 The build embeds the app origin into the extension. A build without an origin asks for the server address on first launch. If Chrome saved a previous server, choose **Change server** from the extension’s signed-out screen. `npm start` runs the existing build and expects environment variables from its caller. Use the `node --env-file` commands above when storing values in `.env`.
 
 Builds produce `dist/server.js`, browser assets under `dist/web`, and an unpacked extension under `dist/extension`. The build also creates the ZIP served at `/downloads/chrome-extension.zip`. Rebuild after changing the public origin or frontend files. Restart the server after changing runtime configuration.
+
+### Switch article layouts
+
+Production defaults to `both`. On a newly imported article, click **Reader** or **Saved layout** above the document. The choice applies immediately and is remembered in that browser. Re-import an older article to capture both formats.
+
+To run one implementation across the service, set `ARTICLE_LAYOUT_MODE` on the Web Comments Render service and deploy the setting. Check `articleMode` at `/config.json` after it goes live. Returning to `both` enables switching for documents that already have both copies. Changing this setting preserves existing snapshots and comments.
 
 ## Set up a hosted Supabase project
 

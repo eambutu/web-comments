@@ -82,10 +82,10 @@ test('saved layouts inline styles relative to each final stylesheet URL and repl
       body:Buffer.from('h1 {color: navy}'),contentType:'text/css'};
     return null;
   };
-  const reader=await articleSnapshots(source,url,load,false);
+  const reader=await articleSnapshots(source,url,load,'reader');
   assert.equal(reader.archive,null);
   assert.equal(requests.length,0);
-  const first=await articleSnapshots(source,url,load,true);
+  const first=await articleSnapshots(source,url,load,'both');
   assert.deepEqual(requests,[
     ['https://example.org/theme.css','style'],['https://cdn.example.org/v1/missing.png','image'],
     ['https://cdn.example.org/v1/colors.css','style'],
@@ -97,5 +97,19 @@ test('saved layouts inline styles relative to each final stylesheet URL and repl
   assert.match(document.querySelector('style').textContent,/@media screen/);
   assert.match(document.querySelector('style').textContent,/color: navy/);
   assert.doesNotMatch(first.archive.html,/colors\.css|missing\.png|<link/);
-  assert.deepEqual((await articleSnapshots(source,url,load,true)).archive,first.archive);
+  assert.deepEqual((await articleSnapshots(source,url,load,'both')).archive,first.archive);
+});
+
+test('archive-only imports and comparison imports survive a failed Reader conversion',async () => {
+  const url=new URL('https://example.org/long');
+  const source='<html><body><article><h1>Long article</h1><p>'+('text '.repeat(150_000))+'</p></article></body></html>';
+  const load=async()=>null;
+  await assert.rejects(articleSnapshots(source,url,load,'reader'),/too large/);
+  const archive=await articleSnapshots(source,url,load,'archive');
+  const both=await articleSnapshots(source,url,load,'both');
+  assert.equal(archive.title,'Long article');
+  assert.equal(archive.archive.version,1);
+  assert.deepEqual(archive,both);
+  assert.ok(Buffer.byteLength(archive.html)<750000);
+  assert.match(archive.html,/^<!--web-comments:saved-layout-text:1--><pre>/);
 });

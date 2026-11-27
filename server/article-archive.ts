@@ -2,11 +2,9 @@ import { parseHTML } from 'linkedom';
 import postcss, { type AtRule, type Declaration } from 'postcss';
 import valueParser from 'postcss-value-parser';
 import { maxArchiveBytes, type ArticleArchive } from '../shared/article-archive';
+import { plainArticleHtml } from '../shared/article-mode';
 import { inlineSvg, rasterMime } from './article-image';
-
-export type AssetKind='image'|'style'|'font';
-export type ArchiveAsset={body:Buffer;url:URL;contentType:string};
-export type LoadAsset=(url:URL,kind:AssetKind)=>Promise<ArchiveAsset|null>;
+import type { AssetKind, LoadAsset, ArticleAsset } from './public-document';
 
 function webUrl(value:string|null,base:URL) {
   if (!value?.trim()) return null;
@@ -28,15 +26,17 @@ function fontMime(bytes:Buffer) {
 
 // Preserve the publisher's DOM and CSS. The archive frame enforces its own CSP and
 // sanitizes this representation again, including when it comes from private Storage.
-export async function bundleArticle(source:string,address:URL,load:LoadAsset):Promise<ArticleArchive|null> {
+export async function bundleArticle(source:string,address:URL,load:LoadAsset,wantTextFallback:boolean) {
   let {document}=parseHTML(source);
   if (document.documentElement?.localName!=='html') {
     document=parseHTML('<html><head></head><body>'+source+'</body></html>').document;
   }
   if (document.querySelectorAll('*').length>20000) return null;
+  const title=(document.querySelector('h1')?.textContent?.trim() || document.title?.trim() || address.hostname).slice(0,350);
+  const omittedMedia=!!document.querySelector('video,audio,canvas,iframe,frame,object,embed');
   const base=webUrl(document.querySelector('base[href]')?.getAttribute('href') ?? null,address) ?? address;
   const missing=new Set<string>();
-  const resources=new Map<string,Promise<ArchiveAsset|null>>();
+  const resources=new Map<string,Promise<ArticleAsset|null>>();
   let encodedBytes=0;
   async function resource(url:URL,kind:AssetKind) {
     url=new URL(url);
@@ -154,6 +154,16 @@ export async function bundleArticle(source:string,address:URL,load:LoadAsset):Pr
       media.replaceWith(image);
     } else media.remove();
   }
+  let textFallback:string|null=null;
+  if (wantTextFallback) {
+    // Capture plain text before inlining binary assets. Historical clients can
+    // open this as HTML when this is the document's only saved representation.
+    const body=document.body.cloneNode(true) as HTMLElement;
+    body.querySelectorAll('style,svg,template,[hidden]').forEach(node=>node.remove());
+    const text=body.innerText.trim();
+    if (!text && !body.querySelector('img')) return null;
+    textFallback=plainArticleHtml(text);
+  }
   const images=new Map<Element,string>();
   for (const element of document.querySelectorAll('*')) {
     if (element.localName==='img') {
@@ -232,5 +242,8 @@ export async function bundleArticle(source:string,address:URL,load:LoadAsset):Pr
   }
   const html='<!doctype html>'+document.documentElement.outerHTML;
   if (Buffer.byteLength(html)>maxArchiveBytes) return null;
-  return {version:1,html,missingAssets:missing.size};
+  const note=[omittedMedia?'Embedded media can be opened on the original page.':'',
+    missing.size?'Some source assets could not be saved.':''].filter(Boolean).join(' ');
+  const bundle:ArticleArchive={version:1,html,missingAssets:missing.size};
+  return {bundle,title,note,textFallback};
 }

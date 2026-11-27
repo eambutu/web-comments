@@ -1,56 +1,71 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { mountArchive } from './archive-frame';
+import React, { useCallback, useEffect, useState } from 'react';
+import type { ArticleLayout, ArticleMode } from '../shared/article-mode';
 import type { DocumentView } from './document-panel';
 import { htmlDocument } from './html-document';
 import type { Snapshot } from './library-data';
 import { alignHtmlAnchor } from './model';
+import { ReaderLayout } from './reader-layout';
+import { SavedLayout } from './saved-layout';
 
-export function ArticleView({snapshot,onReady}:{
-  snapshot:Extract<Snapshot,{kind:'html'}>;onReady:(view:DocumentView)=>void;
+const preferenceKey='web-comments.article-layout';
+
+function preferredLayout():ArticleLayout {
+  try { return localStorage.getItem(preferenceKey)==='archive'?'archive':'reader'; }
+  catch { return 'reader'; }
+}
+
+export function ArticleView({snapshot,mode,onReady}:{
+  snapshot:Extract<Snapshot,{kind:'html'}>;mode:ArticleMode;onReady:(view:DocumentView)=>void;
 }) {
-  const reader=useRef<HTMLElement>(null);
-  const [layout,setLayout]=useState(false);
-  const [archiveRoot,setArchiveRoot]=useState<HTMLElement|null>(null);
-  const [problem,setProblem]=useState('');
+  const [preference,setPreference]=useState(preferredLayout);
+  const [root,setRoot]=useState<HTMLElement|null>(null);
+  const [failed,setFailed]=useState(false);
+  const ready=useCallback((node:HTMLElement|null)=>{if (node) setRoot(node);},[]);
   const archive=snapshot.archive?.bundle;
-  const activeRoot=layout?archiveRoot:null;
-  const active=activeRoot!==null;
+  const canSwitch=mode==='both' && !!archive && snapshot.hasReader && !!snapshot.saved && !failed;
+  // Fix the first capture in a deterministic order. Later switches always use the
+  // text recorded for that version, including versions created with only a bundle.
+  const showArchive=!!archive && !failed && mode!=='reader' &&
+    (!snapshot.hasReader || mode==='archive' || (canSwitch && preference==='archive'));
+  function select(layout:ArticleLayout) {
+    setPreference(layout);
+    try { localStorage.setItem(preferenceKey,layout); } catch {}
+  }
+
   useEffect(()=>{
-    const source=()=>({url:snapshot.source,title:snapshot.title});
-    const canonical=htmlDocument(reader.current!,source);
-    const framed=activeRoot?htmlDocument(activeRoot,source):null;
+    if (!root?.isConnected) return;
+    const page=htmlDocument(root,()=>({url:snapshot.source,title:snapshot.title}));
     onReady({source:snapshot.source,title:snapshot.title,
       capture:async ()=>{
-        if (document.readyState!=='complete') await new Promise<void>(resolve=>window.addEventListener('load',()=>resolve(),{once:true}));
-        const capture=canonical.capture();
-        if (framed) {
-          const selection=framed.capture().anchor;
-          const aligned=selection?.kind==='html'?alignHtmlAnchor(capture.text,selection):null;
-          if (selection && (!aligned || aligned.exact.length>6000)) {
-            throw Error('This selection could not be matched to the reader text. Select the passage in Reader to annotate it.');
-          }
-          capture.anchor=aligned;
+        if (!root.isConnected) throw Error('The article view is opening. Try again in a moment.');
+        if (failed && !snapshot.saved && !snapshot.hasReader) throw Error('The saved layout could not be opened. Try importing the URL again.');
+        const doc=root.ownerDocument;
+        if (doc.readyState!=='complete') await new Promise<void>(resolve=>doc.defaultView!.addEventListener('load',()=>resolve(),{once:true}));
+        const capture=page.capture();
+        if (!snapshot.saved) return {...capture,complete:capture.complete && snapshot.complete,
+          note:[snapshot.note,capture.note].filter(Boolean).join(' ')};
+        const text=await snapshot.saved.text();
+        let anchor=capture.anchor;
+        if (anchor?.kind==='html' && text!==capture.text) {
+          anchor=alignHtmlAnchor(text,anchor);
+          if (!anchor || anchor.exact.length>6000) throw Error('This passage could not be matched to the saved document text.');
         }
-        return {...capture,complete:capture.complete && snapshot.complete,note:[snapshot.note,capture.note].filter(Boolean).join(' ')};
+        return {...capture,text,anchor,complete:snapshot.complete,note:snapshot.note};
       },
-      highlight:async (threads,focus)=>framed?framed.highlight(threads,focus,true):canonical.highlight(threads,focus),
+      highlight:async (threads,focus)=>page.highlight(threads,focus,true),
     });
-    return ()=>{ canonical.dispose();framed?.dispose(); };
-  },[snapshot,onReady,activeRoot]);
+    return ()=>page.dispose();
+  },[root,snapshot,onReady,failed]);
+
+  const problem=failed?'The saved layout could not be displayed.':snapshot.archiveError;
   return <>
-    {archive && <div className="article-layouts" role="group" aria-label="Article view">
-      <button aria-pressed={!layout} onClick={()=>setLayout(false)}>Reader</button>
-      <button aria-pressed={layout} disabled={!!problem} onClick={()=>setLayout(true)}>Saved layout</button>
-      {active && archive.missingAssets>0 && <small>{archive.missingAssets} source {archive.missingAssets===1?'asset was':'assets were'} unavailable.</small>}
+    {canSwitch && <div className="article-layouts" role="group" aria-label="Article view">
+      <button type="button" aria-pressed={!showArchive} onClick={()=>select('reader')}>Reader</button>
+      <button type="button" aria-pressed={showArchive} onClick={()=>select('archive')}>Saved layout</button>
     </div>}
-    {(problem || snapshot.archiveError) && <p className="archive-status" role="status">{problem || snapshot.archiveError?.message}</p>}
-    <div className={active?'archive-reader-copy':undefined} inert={active}>
-      <article className="reader-content" ref={reader} dangerouslySetInnerHTML={{__html:snapshot.html}}/>
-    </div>
-    {archive && (layout || archiveRoot) && <iframe className="article-archive" title="Saved article layout" hidden={!active}
-      sandbox="allow-same-origin" referrerPolicy="no-referrer" src="/archive-frame" onLoad={event=>{
-        try { setArchiveRoot(mountArchive(event.currentTarget,archive)); }
-        catch { setLayout(false);setProblem('The saved layout could not be displayed.'); }
-      }}/>}
+    {problem && <p className="archive-status" role="status">{problem}</p>}
+    {showArchive && archive
+      ? <SavedLayout archive={archive} onRoot={ready} onFailure={()=>setFailed(true)}/>
+      : <ReaderLayout html={snapshot.html} onRoot={ready}/>}
   </>;
 }

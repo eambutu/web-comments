@@ -2,11 +2,12 @@ import React, { useEffect, useMemo, useRef, useState, type FormEvent } from 'rea
 import { createRoot } from 'react-dom/client';
 import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js';
 import { AccountForm } from './account-form';
-import { errorText, loadConfig, saveCapture, type Config } from './client';
+import { errorText, loadConfig, type Config } from './client';
 import { savedComments } from './comment-store';
 import { DocumentPanel, type DocumentView } from './document-panel';
 import { ArticleView } from './article-view';
-import { fetchSnapshot, listLibrary, loadSnapshot, type Entry, type Snapshot } from './library-data';
+import { fetchSnapshot, listLibrary, loadSnapshot, saveLibrarySnapshot, type Entry, type Snapshot } from './library-data';
+import type { ArticleMode } from '../shared/article-mode';
 import { SidePanel } from './side-panel';
 import './content.css';
 import './styles.css';
@@ -42,7 +43,7 @@ function LibraryApp() {
     {status && <p className="library-account-error status" role="alert">{status}</p>}
     {db && config && session!==undefined
       ? session
-        ? <Workspace key={session.user.id} db={db} owner={session.user.id} origin={config.origin}/>
+        ? <Workspace key={session.user.id} db={db} owner={session.user.id} origin={config.origin} mode={config.articleMode ?? 'reader'}/>
         : <main className="library-welcome">
           <div>
             <h2>Save a page to read and annotate later.</h2>
@@ -56,7 +57,7 @@ function LibraryApp() {
 
 type OpenDocument = {key:string;snapshot:Snapshot;entry?:Entry};
 
-function Workspace({db,owner,origin}:{db:SupabaseClient;owner:string;origin:string}) {
+function Workspace({db,owner,origin,mode}:{db:SupabaseClient;owner:string;origin:string;mode:ArticleMode}) {
   const [entries,setEntries]=useState<Entry[]>([]);
   const [url,setUrl]=useState('');
   const [open,setOpen]=useState<OpenDocument|null>(null);
@@ -77,7 +78,7 @@ function Workspace({db,owner,origin}:{db:SupabaseClient;owner:string;origin:stri
     setStatus('');
     setBusy('Opening document…');
     try {
-      const snapshot=await loadSnapshot(db,entry.id);
+      const snapshot=await loadSnapshot(db,entry.id,mode);
       if (current!==operation.current) return;
       setView(null);
       setOpen({key:crypto.randomUUID(),snapshot,entry});
@@ -107,7 +108,7 @@ function Workspace({db,owner,origin}:{db:SupabaseClient;owner:string;origin:stri
     const current=++operation.current;
     setBusy('Importing document…');setStatus('');
     try {
-      const snapshot=await fetchSnapshot(db,url.trim());
+      const snapshot=await fetchSnapshot(db,url.trim(),mode);
       if (current!==operation.current) return;
       setBusy('Saving snapshot…');
       setView(null);
@@ -123,13 +124,12 @@ function Workspace({db,owner,origin}:{db:SupabaseClient;owner:string;origin:stri
     let live=true;
     void (async()=>{
       const capture=await view.capture();
-      const html=pending.snapshot.kind==='html'?pending.snapshot.html:null;
-      const saved=await saveCapture(db,owner,capture,html,pending.snapshot.kind==='html'?pending.snapshot.archive:undefined);
+      const {page:saved,snapshot}=await saveLibrarySnapshot(db,owner,capture,pending.snapshot);
       if (!live) return;
       const item:Entry={id:saved.page_id,source:capture.url,title:capture.title,kind:capture.kind,
         importedAt:new Date().toISOString()};
       setBusy('');
-      setOpen({...pending,entry:item});
+      setOpen({...pending,entry:item,snapshot});
       setEntries(items=>{
         const existing=items.findIndex(entry=>entry.id===item.id);
         if (existing<0) return [item,...items];
@@ -149,10 +149,7 @@ function Workspace({db,owner,origin}:{db:SupabaseClient;owner:string;origin:stri
       if (capture.kind==='pdf' && capture.binaryHash && !capture.pdfPath) {
         capture={...capture,pdfBlob:undefined,pdfPath:owner+'/'+capture.binaryHash+'.pdf'};
       }
-      // An unavailable archive still has a saved reader and version for annotations.
-      if (snapshot.kind==='html' && snapshot.archiveError) return Promise.resolve(snapshot.archiveError.pinned);
-      return saveCapture(db,owner,capture,snapshot.kind==='html'?snapshot.html:null,
-        snapshot.kind==='html'?snapshot.archive:undefined);
+      return saveLibrarySnapshot(db,owner,capture,snapshot).then(result=>result.page);
     }};
   },[comments,open,db,owner]);
 
@@ -188,7 +185,7 @@ function Workspace({db,owner,origin}:{db:SupabaseClient;owner:string;origin:stri
             <a href={open.snapshot.source} target="_blank" rel="noopener noreferrer">Open original</a>
           </header>
           {open.snapshot.kind==='html'
-            ? <ArticleView key={open.key} snapshot={open.snapshot} onReady={setView}/>
+            ? <ArticleView key={open.key} snapshot={open.snapshot} mode={mode} onReady={setView}/>
             : <PdfSnapshotView key={open.key} snapshot={open.snapshot} onReady={setView} onFailure={error=>{
               setStatus(error);setBusy('');
             }}/> }

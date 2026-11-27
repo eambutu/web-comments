@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { isArticleArchive, maxArchiveBytes, type ArticleArchive } from '../shared/article-archive';
 import { hash } from './model';
+import { upload } from './client';
 
 export type SavedArchive={
   bundle:ArticleArchive;
@@ -14,6 +15,14 @@ export const archivePath=(owner:string,fingerprint:string)=>owner+'/archives/'+f
 export async function prepareArchive(bundle:ArticleArchive):Promise<SavedArchive> {
   const serialized=JSON.stringify(bundle);
   return {bundle,digest:await hash(serialized),file:new Blob([serialized],{type:'application/json'})};
+}
+
+export async function storeArchive(db:SupabaseClient,owner:string,fingerprint:string,archive:SavedArchive) {
+  const path=archivePath(owner,fingerprint);
+  if (archive.path!==path) {
+    await upload(db,path,archive.file);
+    archive.path=path;
+  }
 }
 
 export async function loadArchive(db:SupabaseClient,owner:string,fingerprint:string) {

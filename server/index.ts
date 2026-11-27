@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { createReviewServer } from './review';
 import { ImportError, importDocument } from './import-document';
 import { archivePolicy } from '../shared/article-archive';
+import { articleModes } from '../shared/article-mode';
 
 function env(key: string) {
   const value = process.env[key];
@@ -16,6 +17,7 @@ const origin = new URL(process.env.PUBLIC_ORIGIN || process.env.RENDER_EXTERNAL_
 const supabaseUrl = new URL(env('SUPABASE_URL')).origin;
 const publishableKey = env('SUPABASE_PUBLISHABLE_KEY');
 const clientId = process.env.MCP_OAUTH_CLIENT_ID || null;
+const articleMode=z.enum(articleModes).default('both').parse(process.env.ARTICLE_LAYOUT_MODE);
 const authOptions = {persistSession:false,autoRefreshToken:false};
 const publicDb = createClient(supabaseUrl,publishableKey,{auth:authOptions});
 const accountInput = z.object({
@@ -44,7 +46,7 @@ app.get('/healthz', async (_req,res) => {
 });
 app.get('/config.json', (_req,res) => {
   res.set('Cache-Control','no-store');
-  res.json({supabaseUrl,publishableKey,origin,clientId});
+  res.json({supabaseUrl,publishableKey,origin,clientId,articleMode});
 });
 // Keep older clients able to sign into accounts created with usernames.
 app.post('/auth/username-login', async (req,res) => {
@@ -86,7 +88,8 @@ app.post('/api/import', async (req,res) => {
     res.status(401).json({error:'Sign in with a confirmed email to import a document.'});
     return;
   }
-  const input=z.object({url:z.string().trim().min(1).max(2048),archive:z.boolean().optional()}).safeParse(req.body);
+  const input=z.object({url:z.string().trim().min(1).max(2048),mode:z.enum(articleModes).optional(),
+    archive:z.boolean().optional()}).safeParse(req.body);
   if (!input.success) {
     res.status(400).json({error:'Enter a public article or PDF link.'});
     return;
@@ -97,7 +100,9 @@ app.post('/api/import', async (req,res) => {
   }
   activeImports.add(user.id);
   try {
-    const result=await importDocument(input.data.url,input.data.archive);
+    // Older clients requested the second representation with archive:true.
+    const requested=input.data.mode ?? (input.data.archive?'both':'reader');
+    const result=await importDocument(input.data.url,articleMode==='both'?requested:articleMode);
     if (result.kind==='pdf') {
       res.type('application/pdf').set('X-Web-Comments-Source',result.url).send(result.body);
     } else res.json(result);
@@ -158,4 +163,4 @@ app.use(((error,_req,res,_next) => {
   console.error('Web Comments request failed',error.code ?? error.status ?? 'unknown');
   if (!res.headersSent) res.status(500).json({error:'Web Comments could not complete this request.'});
 }) satisfies express.ErrorRequestHandler);
-app.listen(Number(process.env.PORT ?? 8787),'0.0.0.0',() => console.log('Web Comments is ready.'));
+app.listen(Number(process.env.PORT ?? 8787),'0.0.0.0',() => console.log('Web Comments is ready. Article layout mode is '+articleMode+'.'));
