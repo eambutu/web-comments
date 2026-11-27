@@ -1,4 +1,4 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { createClient, type AuthError, type SupabaseClient } from '@supabase/supabase-js';
 import { hash, type Capture } from './model';
 
 declare const DEFAULT_WEB_COMMENTS_ORIGIN: string;
@@ -30,25 +30,42 @@ export function extensionClient(config:Config, autoRefreshToken=true) {
     }},
   });
 }
-export async function signUpAccount(db:SupabaseClient, origin:string, email:string, password:string) {
+function checkEmailDelivery(error:AuthError|null) {
+  if (error?.code === 'email_address_not_authorized' || error?.code === 'unexpected_failure') {
+    throw new Error('Confirmation emails are currently unavailable. Try again later.');
+  }
+  if (error?.code === 'over_email_send_rate_limit' || error?.code === 'over_request_rate_limit') {
+    throw new Error('Please wait a moment before requesting another email.');
+  }
+  if (error) throw error;
+}
+
+export async function signUpAccount(db:SupabaseClient,email:string,password:string) {
   if (password.length < 12 || new TextEncoder().encode(password).byteLength > 72) {
     throw new Error('Use at least 12 characters and at most 72 bytes for your password.');
   }
-  const {data,error} = await db.auth.signUp({
-    email:email.trim().toLowerCase(),password,
-    options:{emailRedirectTo:origin+'/sign-in'},
-  });
-  if (error?.code === 'email_address_not_authorized' || error?.code === 'unexpected_failure') {
-    throw new Error('Confirmation emails are currently unavailable. Try again once email delivery is set up.');
-  }
-  if (error) throw error;
+  const {data,error} = await db.auth.signUp({email,password});
+  checkEmailDelivery(error);
   return data.session;
 }
-export async function signInAccount(db:SupabaseClient,email:string,password:string) {
-  const {data,error} = await db.auth.signInWithPassword({email:email.trim().toLowerCase(),password});
-  if (error?.code === 'email_not_confirmed') {
-    throw new Error('Confirm your email using the link we sent, then sign in.');
+
+export async function confirmEmailCode(db:SupabaseClient,email:string,token:string) {
+  const {data,error} = await db.auth.verifyOtp({email,token,type:'email'});
+  if (error?.code === 'otp_expired') {
+    throw new Error('That code is invalid or expired. Use the latest email or request a new code.');
   }
+  if (error) throw error;
+  if (!data.session) throw new Error('Could not start a sign-in session.');
+  return data.session;
+}
+
+export async function resendConfirmationCode(db:SupabaseClient,email:string) {
+  const {error} = await db.auth.resend({email,type:'signup'});
+  checkEmailDelivery(error);
+}
+
+export async function signInAccount(db:SupabaseClient,email:string,password:string) {
+  const {data,error} = await db.auth.signInWithPassword({email,password});
   if (error) throw error;
   if (!data.session) throw new Error('Could not start a sign-in session.');
   return data.session;

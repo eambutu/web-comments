@@ -184,7 +184,7 @@ function AccountPanel({view,kind,initialSignUp}:{view:DocumentView|null;kind:Kin
         {!config.clientId && <p className="playground-help">ChatGPT replies will be available after the connection is set up.</p>}
         {view && <DocumentPanel key={account+':'+kind} store={store} view={view} pageLink={id=>config.origin+'/p/'+id}/>}
       </>
-      : <AccountForm db={db} origin={config.origin} initialSignUp={initialSignUp}/>
+      : <AccountForm db={db} initialSignUp={initialSignUp}/>
       : !status && <p role="status">Loading account…</p>}
   </SidePanel>;
 }

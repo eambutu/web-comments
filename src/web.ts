@@ -76,7 +76,7 @@ async function start() {
     const db=createClient(config.supabaseUrl,config.publishableKey,{
       auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},
     });
-    accountForm({db,origin:config.origin,initialSignUp:query.get('mode')==='signup',async onSignedIn(session) {
+    accountForm({db,initialSignUp:query.get('mode')==='signup',async onSignedIn(session) {
       await handOffSession(state,session);
       history.replaceState(null,'',extensionSignInPath);
       resetCard(element('h2','Signed in to Web Comments in Chrome'),
@@ -90,7 +90,7 @@ async function start() {
     async function renderAccount() {
       const {data:{session}}=await db.auth.getSession();
       if (!session) {
-        accountForm({db,origin:config.origin,initialSignUp:path==='/signup',onSignedIn:renderAccount});
+        accountForm({db,initialSignUp:path==='/signup',onSignedIn:renderAccount});
         return;
       }
       const playground=element('a','Open the playground');
@@ -119,7 +119,7 @@ async function start() {
     showStatus('');
     const {data:{session}} = await db.auth.getSession();
     if (!session) {
-      accountForm({db,origin:config.origin,onSignedIn:render},
+      accountForm({db,onSignedIn:render},
         element('p',consent?'Sign in to authorize ChatGPT.':'Sign in to view this page.'));
       return;
     }

@@ -7,7 +7,7 @@ A Chrome side panel for annotating webpages and PDFs. Save a selection, include 
 Web Comments needs a Supabase project and a running Web Comments service. The Chrome extension uses the service address to find your Supabase project. ChatGPT connects to the same service over HTTPS.
 
 1. Complete the Supabase and service setup below.
-2. Download the Chrome extension and load it in Chrome. Choose **Sign up** in the side panel to create a private account with your email address and a password. Confirm your email before signing in.
+2. Download the Chrome extension and load it in Chrome. Choose **Sign up** in the side panel to create a private account with your email address and a password. Enter the six-digit code sent to your email to finish signing up.
 3. Connect the service as a custom OAuth app in ChatGPT using the verification steps below.
 4. In Chrome, select text on a webpage, click **Comment on selection**, and post a question such as `@AI What is the main point of this paragraph?`
 5. Click **Copy link**, paste it into a ChatGPT conversation with the app enabled, and ask ChatGPT to answer the pending questions. Look for its reply in the same Chrome thread.
@@ -19,7 +19,7 @@ Open `/playground` on the service website. **Try sample** shows the Chrome side 
 ## Set up Supabase and deploy the service
 
 1. Create a dedicated Supabase project. Apply the SQL files in `supabase/migrations/` in order through the Supabase SQL Editor or run `supabase db push --linked`. The migrations set up the database, private Storage, Realtime, and account access.
-2. Enable email and password sign-up with email confirmation in Supabase Auth. Set the **Site URL** to the service's public HTTPS origin, add `/sign-in` on that origin to the allowed redirect URLs, and configure a [custom SMTP provider](https://supabase.com/docs/guides/auth/auth-smtp) to send confirmation mail to the public.
+2. Enable email and password sign-up with email confirmation in Supabase Auth. Use the six-digit code in the confirmation email to verify the account on the signup page. Set the **Confirm signup** email body to [`supabase/templates/confirm-signup.html`](supabase/templates/confirm-signup.html) and use **Confirm your Web Comments account** as its subject. Configure a [custom SMTP provider](https://supabase.com/docs/guides/auth/auth-smtp) to send confirmation mail to the public.
 3. Deploy the service using Node.js 22 or later. Use `npm ci --include=dev && npm run build` to build and `npm start` to start. Fill in the settings shown in `.env.example`. Set `PUBLIC_ORIGIN` to the service's public HTTPS origin or use Render's `RENDER_EXTERNAL_URL`.
 
    ```sh
