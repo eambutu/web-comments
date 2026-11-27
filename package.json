@@ -6,7 +6,8 @@
     "build": "node build.mjs",
     "check": "tsc --noEmit",
     "start": "node dist/server.js",
-    "test": "npm run build && node --test tests/*.test.mjs"
+    "test": "npm run build && node --test tests/*.test.mjs",
+    "import:preview": "node scripts/import-preview.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
@@ -18,12 +19,14 @@
     "katex": "^0.16.22",
     "linkedom": "0.18.15",
     "pdfjs-dist": "4.10.38",
+    "postcss": "8.5.34",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-markdown": "^10.1.0",
     "rehype-katex": "^7.0.1",
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
+    "sharp": "0.35.5",
     "zod": "^3.25.76"
   },
   "devDependencies": {
@@ -35,6 +38,7 @@
     "@types/react-dom": "^19.0.0",
     "esbuild": "^0.25.0",
     "fflate": "0.8.2",
+    "playwright-core": "1.65.1",
     "typescript": "^5.9.0"
   }
 }

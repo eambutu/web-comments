@@ -15,7 +15,7 @@ Web Comments lets you save a webpage or PDF, annotate a passage, and keep the di
 3. Select a passage in the middle and click **Comment on selection** on the right. Write a comment and click **Post comment**. Click a thread’s quotation to jump to its passage. Use **Reply** to continue the discussion or **Resolve** to close the thread.
 4. Use **Copy link** for the saved Web Comments page or **Copy ID** for its identifier. Both actions save the displayed document version. Page links and IDs require access to the account’s data.
 
-The library preserves readable HTML structure or a private copy of the PDF. HTML imports omit scripts, navigation, and remote images. Public import can fail when a site requires a browser login, loads the article with JavaScript, or restricts automated downloads. Use the original source link to refer back to the publisher.
+The library preserves readable HTML structure or a private copy of the PDF. HTML imports preserve supported images as offline copies and link to embedded media on the source page. Public import can fail when a site requires a browser login, loads the article with JavaScript, or restricts automated downloads. Use the original source link to refer back to the publisher.
 
 ## Try the playground
 
@@ -52,3 +52,16 @@ npm test
 - [Setup and operations](docs/setup.md) covers local development, Supabase Auth and Storage, Render, ChatGPT, and smoke tests.
 - [Architecture](docs/architecture.md) maps code entry points, snapshot storage, account boundaries, and MCP tool behavior.
 - [Agent handoff](AGENTS.md) gives the first steps and verification checklist for the next agent working in this repo.
+
+## Preview article imports locally
+
+Generate standalone reader pages and a report using the Library's importer, browser sanitizer, and reader styles. The preview command needs no account or database.
+
+```sh
+npm run import:preview -- https://example.org/article https://example.org/another
+npm run import:preview -- --screenshot --browser /path/to/chromium --focus 'figure:has(img)' https://example.org/article
+```
+
+Open `dist/import-previews/index.html` for the pages, screenshots, and measurements. Choose a separate directory with `--out` to keep screenshots from earlier runs. Use `--source captured.html --images captured-images` with one URL to replay a fixed capture offline. The image directory holds same-site assets under their original filenames. With a captured source, `--archive` also renders the publisher's inline CSS, HTML, and provided images in a scriptless sandboxed iframe for comparison. The archive prototype leaves linked stylesheets and live embeds out of the bundle.
+
+For importer changes, keep a set of representative captures. Compare the report and screenshots for each change, and add a regression assertion when a specific structure is lost. The screenshot run checks that the browser decoded every embedded image and that each saved fragment points to a target.

@@ -114,9 +114,10 @@ app.get('/downloads/chrome-extension.zip', (_req,res) => {
 app.get(['/oauth/consent','/library','/playground','/signup','/sign-in','/extension/sign-in','/p/:id','/'], (req,res) => {
   if (/\/(?:sign-in|signup)\/?$/.test(req.path)) res.set('Cache-Control','no-store');
   const realtime = supabaseUrl.replace(/^http(s?):/, 'ws$1:');
-  res.set('Content-Security-Policy', `default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; worker-src 'self'; connect-src ${supabaseUrl} ${realtime} 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`);
-  res.set('Referrer-Policy','no-referrer');
   const path=req.path.replace(/\/$/,'');
+  const images=path==='/library'?'img-src data:; ':'';
+  res.set('Content-Security-Policy', `default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; worker-src 'self'; ${images} connect-src ${supabaseUrl} ${realtime} 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`);
+  res.set('Referrer-Policy','no-referrer');
   const page=path==='/library'?'library.html':path==='/playground'?'playground.html':'index.html';
   res.sendFile(fileURLToPath(new URL('./web/'+page,import.meta.url)));
 });

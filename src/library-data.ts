@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import DOMPurify from 'dompurify';
+import { sanitizeArticle } from './article-sanitizer';
 
 export type Entry = {
   id:string;title:string;source:string;kind:'html'|'pdf';importedAt:string;
@@ -19,14 +19,6 @@ type JoinedEntry = {
 };
 
 const joins='wc_pages!inner(source_url),wc_versions!inner(title,kind,complete,extraction_note,pdf_path)';
-const safeTags='article section div span p h1 h2 h3 h4 h5 h6 a blockquote ul ol li dl dt dd pre code strong em b i s del mark sub sup table thead tbody tfoot tr th td caption br hr figure figcaption details summary time'.split(' ');
-
-function safeHtml(html:string) {
-  return DOMPurify.sanitize(html,{
-    ALLOWED_TAGS:safeTags,ALLOWED_ATTR:['href','target','rel'],
-    ALLOWED_URI_REGEXP:/^https?:\/\//i,ALLOW_DATA_ATTR:false,ALLOW_ARIA_ATTR:false,
-  });
-}
 
 export async function listLibrary(db:SupabaseClient, owner:string) {
   const items:Entry[]=[];
@@ -55,7 +47,7 @@ export async function loadSnapshot(db:SupabaseClient,id:string):Promise<Snapshot
     if (downloadError) throw downloadError;
     return {kind:'pdf',source,title:version.title,bytes,path:version.pdf_path};
   }
-  return {kind:'html',source,title:version.title,html:safeHtml(row.snapshot_html ?? ''),
+  return {kind:'html',source,title:version.title,html:sanitizeArticle(row.snapshot_html ?? ''),
     complete:version.complete,note:version.extraction_note};
 }
 
@@ -76,5 +68,5 @@ export async function fetchSnapshot(db:SupabaseClient,url:string):Promise<Snapsh
     return {kind:'pdf',source,title:'PDF document',bytes:await response.blob()};
   }
   const {url:source,title,html,complete,note}=await response.json();
-  return {kind:'html',source,title,html:safeHtml(html),complete,note};
+  return {kind:'html',source,title,html:sanitizeArticle(html),complete,note};
 }

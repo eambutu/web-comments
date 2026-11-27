@@ -36,6 +36,24 @@
 .reader-content pre { background:#ecf2ed; border-radius:7px; padding:.75rem; font-size:.84em; }
 .reader-content table { border-collapse:collapse; display:block; }
 .reader-content th,.reader-content td { border:1px solid #c5d7cb; padding:.4rem; }
+.reader-content h1:first-child { margin-top:0; }
+.reader-content ul,.reader-content ol { padding-inline-start:1.65em; }
+.reader-content li { margin:.25em 0; }
+.reader-content li > ul,.reader-content li > ol { margin:.25em 0 .5em; }
+.reader-content a { color:#14655f; text-decoration:underline; text-underline-offset:.16em; }
+.reader-content [id] { scroll-margin-top:6rem; }
+.reader-content figure { margin:1.6em 0; }
+.reader-content img { display:block; height:auto; max-width:100%; margin:.5em auto; }
+.reader-content figcaption { margin:.6em 0 0; color:#4e665d; font-size:.9em; line-height:1.45; }
+.reader-content .snapshot-note { display:block; margin:.7em 0; padding:.7em 1em; background:#eef3ed; border-radius:6px; font-size:.9em; }
+.reader-content .snapshot-note img { max-height:18rem; }
+.reader-content .snapshot-note > span > span { display:block; }
+.reader-content .snapshot-block { display:block; }
+.reader-content .snapshot-space-normal { white-space:normal; }
+.reader-content .snapshot-space-pre { white-space:pre-wrap; }
+.reader-content .snapshot-space-pre-wrap { white-space:pre-wrap; }
+.reader-content .snapshot-space-pre-line { white-space:pre-line; }
+.reader-content .snapshot-space-break-spaces { white-space:break-spaces; }
 .reader-content ::selection { background:#c9e4de; color:#153932; }
 .library-pdf { min-width:0; background:#19252d; color:#e7eef1; min-height:calc(100% - 4.3rem); padding:.3rem 0 1rem; }
 .library-pdf > p { padding:.75rem 1rem .1rem; }
