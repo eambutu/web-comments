@@ -1,62 +1,54 @@
 # Web Comments
 
-A Chrome side panel for annotating webpages and PDFs. Save a selection, include `@AI` in any message you want answered, and paste the copied link or ID into the ChatGPT conversation you want to use. ChatGPT reads the saved version and discussion through MCP, then writes replies under the individual questions.
+Web Comments lets you save a webpage or PDF, annotate a passage, and keep the discussion beside the document. Use the web library in an ordinary browser or capture a page from the Chrome side panel. A connected ChatGPT app can review a saved document and write replies under its pending `@AI` questions.
 
-## From installation to your first reply
+| Start here | What you can do |
+|---|---|
+| [Web library](https://web-comments-rysl.onrender.com/library) | Import public URLs, reopen private snapshots, and annotate in the browser. |
+| [Playground](https://web-comments-rysl.onrender.com/playground) | Try the shared panel with a sample webpage and PDF, or sign in to save real comments on the sample. |
+| [Chrome download](https://web-comments-rysl.onrender.com/downloads/chrome-extension.zip) | Annotate the page you are currently viewing, including pages you can access in your signed-in browser. |
 
-Web Comments needs a Supabase project and a running Web Comments service. The Chrome extension uses the service address to find your Supabase project. ChatGPT connects to the same service over HTTPS.
+## Save a document and start a thread
 
-1. Complete the Supabase and service setup below.
-2. Download the Chrome extension and load it in Chrome. Choose **Sign up** in the side panel to create a private account with your email address and a password. Enter the six-digit code sent to your email to finish signing up.
-3. Connect the service as a custom OAuth app in ChatGPT using the verification steps below.
-4. In Chrome, select text on a webpage, click **Comment on selection**, and post a question such as `@AI What is the main point of this paragraph?`
-5. Click **Copy link**, paste it into a ChatGPT conversation with the app enabled, and ask ChatGPT to answer the pending questions. Look for its reply in the same Chrome thread.
+1. Open the library and sign in with your Web Comments email and password. For a new account, enter the six-digit code from your confirmation email on the signup page.
+2. Paste a public article or direct PDF URL into **Import a link** and click **Import**. Your saved documents appear on the left. Articles open in a reader view, and PDFs open with selectable text when the PDF contains a text layer.
+3. Select a passage in the middle and click **Comment on selection** on the right. Write a comment and click **Post comment**. Click a thread’s quotation to jump to its passage. Use **Reply** to continue the discussion or **Resolve** to close the thread.
+4. Use **Copy link** for the saved Web Comments page or **Copy ID** for its identifier. Both actions save the displayed document version. Page links and IDs require access to the account’s data.
 
-## Use the web library
+The library preserves readable HTML structure or a private copy of the PDF. HTML imports omit scripts, navigation, and remote images. Public import can fail when a site requires a browser login, loads the article with JavaScript, or restricts automated downloads. Use the original source link to refer back to the publisher.
 
-Open `/library`, sign in with your Web Comments account, and import the link to a public article or PDF. The left sidebar lists your saved snapshots. Select text and use the shared comments panel beside the reader. The library keeps a readable HTML snapshot or a private copy of the PDF so you can reopen it after the source changes. HTML imports preserve text and structure and omit scripts, site navigation, and remote images. Some sites restrict automated downloads or require a signed-in browser session.
+## Try the playground
 
-## Try it in a browser
+In **Try sample**, select a passage, post an `@AI` comment, and click **Preview replies** to see a sample answer. Try **Open as PDF** to exercise the PDF viewer. The sample clears on reload. **My account** uses your real account and saves annotations on the sample.
 
-Open `/playground` on the service website. **Try sample** shows the Chrome side panel next to a sample document. You can select text, copy a sample link or ID, open the PDF version, and preview example replies. Sample threads clear on reload. **My account** uses the same private account and commenting tools as the Chrome extension. Save a question there and use **Copy link** to try the ChatGPT workflow without installing anything.
+## Use the Chrome side panel
 
-## Set up Supabase and deploy the service
+1. Download and extract the ZIP. In Chrome 120 or later, open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select the folder containing `manifest.json`.
+2. Open Web Comments from the toolbar. Choose **Sign up** or **Sign in in browser**. The extension opens a regular browser tab that supports password-manager autofill. When sign-in completes, return to your original tab and open the panel.
+3. Select text and use the same comment controls as the library. For a PDF, choose **Open as PDF**. The viewer supports fetching the source, opening a downloaded copy for that source URL, or loading the latest saved binary. Local PDFs opened directly from a file tab require **Allow access to file URLs**. The viewer’s file picker can open a downloaded copy.
 
-1. Create a dedicated Supabase project. Apply the SQL files in `supabase/migrations/` in order through the Supabase SQL Editor or run `supabase db push --linked`. The migrations set up the database, private Storage, Realtime, and account access.
-2. Enable email and password sign-up with email confirmation in Supabase Auth. Use the six-digit code in the confirmation email to verify the account on the signup page. Set the **Confirm signup** email body to [`supabase/templates/confirm-signup.html`](supabase/templates/confirm-signup.html) and use **Confirm your Web Comments account** as its subject. Configure a [custom SMTP provider](https://supabase.com/docs/guides/auth/auth-smtp) to send confirmation mail to the public.
-3. Deploy the service using Node.js 22 or later. Use `npm ci --include=dev && npm run build` to build and `npm start` to start. Fill in the settings shown in `.env.example`. Set `PUBLIC_ORIGIN` to the service's public HTTPS origin or use Render's `RENDER_EXTERNAL_URL`.
+Managed Chrome installations may block unpacked extensions. The web library works without extension permissions. To update an unpacked build, replace its files, click **Reload** in `chrome://extensions`, and refresh tabs that were already open.
 
-   ```sh
-   npm ci --include=dev
-   npm run build
-   node --env-file=.env dist/server.js
-   ```
+## Ask ChatGPT to review a saved page
 
-4. Choose **Download Chrome extension** on the service website. Extract the ZIP. In Chrome 120 or later, open `chrome://extensions`, turn on **Developer mode**, and choose **Load unpacked**. Select the folder containing `manifest.json`. Open the Web Comments toolbar action and choose **Sign up** or **Sign in in browser**. The extension opens a regular tab where password managers can fill the form, then receives the sign-in session. You can also create an account on the website. Reload tabs that were open before you loaded the extension.
-5. To add ChatGPT, enable the **OAuth Server** in Supabase Auth. Set the Auth **Site URL** to the service's public HTTPS origin and the **Authorization Path** to `/oauth/consent`. Register a predefined OAuth client for ChatGPT using the redirect URI shown during ChatGPT app setup. Set the service's `MCP_OAUTH_CLIENT_ID` to that client's ID. A public client uses PKCE. If you register a confidential client, add its secret in the ChatGPT app configuration. Leave dynamic registration off. You can create an account and annotate pages before setting up ChatGPT.
+1. Post a comment containing `@AI`, for example `@AI How does this section connect to the conclusion?`. The panel marks it **Awaiting AI**.
+2. Click **Copy link**. In a ChatGPT conversation with the Web Comments app enabled, paste the link. The MCP instructions treat a bare Web Comments link as a request to read the full saved document and discussion and reply to pending questions. Add a message to narrow the request. Clients that expose MCP prompts can choose **Review Web Comments**.
+3. If ChatGPT asks to approve the write, approve it. The answer appears as **AI reply** beneath its question in the original thread.
 
-Each account sees only its own saved pages, PDFs, and comments. Existing username accounts can still use the old extension to sign in if the legacy `web-comments-enroll` Edge Function is deployed.
+ChatGPT requires the [OAuth setup](docs/setup.md#connect-chatgpt) and a client with permission to use custom MCP apps and write tools. Posting `@AI` marks a pending question. Sending the link in ChatGPT starts the review.
 
-The extension download uses `PUBLIC_ORIGIN` or Render’s `RENDER_EXTERNAL_URL` from build time as its default server. A build without either setting prompts for the address. **Change server** remains available from the sign-in screen.
+## Build and validate
 
-For PDFs, choose **Open as PDF** in the panel and select text on one page. If the source requires authentication and the viewer cannot fetch it, download the PDF and choose **Open downloaded PDF** while the viewer is open for that source URL. For a local PDF, start from its Chrome tab. You can enable **Allow access to file URLs** in the extension details for direct loading, or use the file picker. **Open saved PDF** loads the latest saved binary for that source from private Storage.
+Use Node.js 22 or later and npm.
 
-## Verify ChatGPT access first
+```sh
+npm ci --include=dev
+npm run check
+npm test
+```
 
-Create one disposable annotation with an `@AI` question. In ChatGPT, enable Developer mode if your account or workspace supports it. Create a custom app using `https://YOUR-MCP-HOST/mcp`, choose OAuth and predefined client credentials, and sign in on the consent page as the same Supabase user. Use the redirect URI and authentication method shown by the setup UI. See the [ChatGPT connection instructions](https://developers.openai.com/apps-sdk/deploy/connect-chatgpt/) and [OAuth configuration](https://developers.openai.com/apps-sdk/build/auth/).
+`npm test` builds the service, website, and extension before running the local tests. The tests require no hosted accounts. See the setup guide to run the sample playground, connect a development Supabase project, or configure a hosted deployment.
 
-Select Web Comments in a conversation and paste a copied page link. The app treats a link sent by itself as a request to review the whole saved page and reply to its pending `@AI` questions. Add a message if you want to narrow the review. MCP clients that expose prompts can also select **Review Web Comments** and provide the link or page ID.
-
-Verify that the app can call the three read tools and the write tool, and that the disposable reply appears beneath its question. If the app cannot be added or write calls cannot be approved, check your ChatGPT plan or workspace permissions for custom MCP apps and write tools.
-
-Then repeat with two annotated documents. Reopen them and verify that the highlights and threads restore separately. Use a link for one and an ID for the other. Include an early question whose answer depends on a later section and an ordinary note in a different thread. Repeat the same review to check for duplicate replies, then add a new `@AI` follow-up and confirm it stays pending until a fresh review. Try an incomplete capture and confirm the app explains the gap and leaves its questions pending.
-
-## How capture and review work
-
-- Capture reads the current tab's rendered DOM or the PDF viewer's text layer. Clicking **Comment on selection** saves the version used for the anchor, and both **Copy** actions capture the document again. Identical captures reuse the latest version. Large text snapshots and PDFs are kept in private Supabase Storage.
-- Embedded frames, canvas content, and detectable loading gaps are reported as incomplete. PDF pages with missing or malformed text are flagged. Scan-only PDFs need a text layer from OCR before review. The extension cannot reliably detect every site-specific omission, including offscreen virtualized content and text contained only in images.
-- The MCP server freezes the version and discussion at resolution. Fetch both streams in order using their `next_cursor` until `complete` is true. The server records that the chunks were fetched. ChatGPT uses the tool instructions to synthesize across the fetched material.
-- A reply is an immutable assistant message linked to its question and the reviewed version. A unique database constraint makes retries idempotent. A new question in the same thread has its own pending status.
-- Sign-in and ownership are separate from the page reference. Use a dedicated Supabase project because its OAuth server issues user-scoped tokens for that Supabase project.
-
-Run `npm run check` for TypeScript and `npm test` for the local account, migration, and review integration tests. Those tests run locally against PostgreSQL through PGlite. Account-level ChatGPT acceptance requires your deployed service and custom app connection.
+- [Setup and operations](docs/setup.md) covers local development, Supabase Auth and Storage, Render, ChatGPT, and smoke tests.
+- [Architecture](docs/architecture.md) maps code entry points, snapshot storage, account boundaries, and MCP tool behavior.
+- [Agent handoff](AGENTS.md) gives the first steps and verification checklist for the next agent working in this repo.
