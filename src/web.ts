@@ -30,7 +30,9 @@ function home(config:Config) {
   );
   const signup = element('a','Create a private account');
   signup.href='/signup';
-  card.replaceChildren(element('h2','Set up Web Comments in Chrome'),download,steps,signup);
+  const playground = element('a','Try the playground');
+  playground.href='/playground';
+  card.replaceChildren(element('h2','Set up Web Comments in Chrome'),playground,download,steps,signup);
   if (preconfigured) return;
   const address=element('label','Server address');
   const value=element('input');

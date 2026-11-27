@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { PGlite } from '@electric-sql/pglite';
-import { referenceId, resolvePage, readContent, readComments, postReply } from '../dist/review.js';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { createReviewServer, referenceId, resolvePage, readContent, readComments, postReply } from '../dist/review.js';
 
 const owner = randomUUID();
 const other = randomUUID();
@@ -74,6 +76,31 @@ before(async () => {
   await client.query('insert into auth.users(id) values($1),($2)',[owner,other]);
 });
 after(async () => { await client.close(); });
+
+test('MCP guides bare links into one coordinated review and offers a reusable prompt',async () => {
+  const server = createReviewServer({},origin);
+  const client = new Client({name:'review-discovery-test',version:'1.0.0'});
+  const [clientSide,serverSide] = InMemoryTransport.createLinkedPair();
+  await server.connect(serverSide);
+  try {
+    await client.connect(clientSide);
+    assert.match(client.getInstructions(),/link by itself/);
+    assert.match(client.getInstructions(),/Fetch document and comment chunks in parallel/);
+    assert.match(client.getInstructions(),/one coordinator/);
+    const {tools} = await client.listTools();
+    assert.match(tools.find(tool=>tool.name==='resolve_page').description,/answer its pending @AI questions/);
+    const {prompts} = await client.listPrompts();
+    assert.ok(prompts.some(prompt=>prompt.name==='review_web_comments'));
+    const reference = origin+'/p/'+randomUUID();
+    const prompt = await client.getPrompt({name:'review_web_comments',arguments:{reference}});
+    assert.equal(prompt.messages[0].role,'user');
+    assert.ok(prompt.messages[0].content.text.includes(reference));
+    await assert.rejects(client.getPrompt({name:'review_web_comments',arguments:{reference:'https://elsewhere.example/p/'+randomUUID()}}),/Web Comments link/);
+  } finally {
+    await client.close();
+    await server.close();
+  }
+});
 
 test('usernames are unique, privately resolvable and assigned only by trusted Auth metadata',async () => {
   const name = 'test-user';

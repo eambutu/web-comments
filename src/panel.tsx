@@ -1,19 +1,16 @@
-import React, { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import React, { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
-import Markdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
-import rehypeKatex from 'rehype-katex';
-import 'katex/dist/katex.min.css';
 import './styles.css';
-import { defaultServerOrigin, errorText, extensionClient, loadConfig, saveCapture, signInAccount, signUpAccount, type Config } from './client';
-import type { Capture, Message, Thread } from './model';
+import { defaultServerOrigin, errorText, extensionClient, loadConfig, type Config } from './client';
+import { AccountForm } from './account-form';
+import { savedComments, type CommentStore } from './comment-store';
+import { DocumentPanel, type DocumentView } from './document-panel';
+import type { Capture, Thread } from './model';
 
 function App() {
   const [config,setConfig] = useState<Config|null>(null);
   const [session,setSession] = useState<Session|null>(null);
-  const [signUp,setSignUp] = useState(false);
   const [loaded,setLoaded] = useState(false);
   const [busy,setBusy] = useState(false);
   const [status,setStatus] = useState('');
@@ -48,19 +45,9 @@ function App() {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     void act(async () => {
-      if (!db || !config) {
-        const next = await loadConfig(String(form.get('server')));
-        await chrome.storage.local.set({wcConfig:next});
-        setConfig(next);
-        return;
-      }
-      const login = String(form.get('login'));
-      const password = String(form.get('password'));
-      if (signUp) {
-        await signUpAccount(config.origin,login,password);
-        setSignUp(false);
-      }
-      await signInAccount(db,config.origin,login,password);
+      const next = await loadConfig(String(form.get('server')));
+      await chrome.storage.local.set({wcConfig:next});
+      setConfig(next);
     });
   }
   return <main className="shell">
@@ -68,31 +55,16 @@ function App() {
       const {error} = await db.auth.signOut();
       if (error) throw error;
     })}>Sign out</button>}</header>
-    {!loaded ? <p>Loading…</p> : db && session && config
-      ? <Workspace key={session.user.id} db={db} owner={session.user.id} origin={config.origin}/>
-      : <form key={db ? String(signUp) : 'server'} onSubmit={submit} className="card stack">
-        <h2>{db ? signUp ? 'Create your account' : 'Sign in' : 'Connect your server'}</h2>
-        {db ? <>
-          <label>{signUp ? 'Username' : 'Username or email'}
-            <input name="login" type="text" required autoComplete="username" autoCapitalize="none" spellCheck={false}
-              minLength={signUp ? 3 : undefined} maxLength={signUp ? 32 : undefined}
-              pattern={signUp ? '[A-Za-z][A-Za-z0-9_\\-]{2,31}' : undefined}
-              title={signUp ? 'Start with a letter. Use only letters, numbers, underscores or hyphens.' : undefined}/>
-          </label>
-          <label>Password<input name="password" type="password" required minLength={signUp ? 12 : undefined}
-            autoComplete={signUp ? 'new-password' : 'current-password'}/></label>
-          {signUp && <p>Use at least 12 characters. Save your password so you can sign in again.</p>}
-        </> : <label>Server address<input name="server" type="url" defaultValue={defaultServerOrigin} placeholder="https://…" required /></label>}
-        <button className="primary" disabled={busy}>{busy ? 'Working…' : db ? signUp ? 'Create account' : 'Sign in' : 'Connect'}</button>
-        {db && <div className="actions">
-          <button type="button" className="subtle" disabled={busy} onClick={() => {
-            setSignUp(!signUp);setStatus('');
-          }}>{signUp ? 'Back to sign in' : 'Sign up'}</button>
-          <button type="button" className="subtle" disabled={busy} onClick={() => void act(async () => {
-            await chrome.storage.local.remove('wcConfig');setConfig(null);setSignUp(false);
-          })}>Change server</button>
-        </div>}
-      </form>}
+    {!loaded ? <p>Loading…</p>
+      : !db || !config ? <form onSubmit={submit} className="card stack">
+        <h2>Connect your server</h2>
+        <label>Server address<input name="server" type="url" defaultValue={defaultServerOrigin} placeholder="https://…" required /></label>
+        <button className="primary" disabled={busy}>{busy ? 'Working…' : 'Connect'}</button>
+      </form>
+      : !session ? <AccountForm db={db} origin={config.origin} backLabel="Change server" onBack={() => void act(async () => {
+        await chrome.storage.local.remove('wcConfig');setConfig(null);
+      })}/>
+      : <Workspace key={session.user.id} db={db} owner={session.user.id} origin={config.origin}/>}
     {status && <p className="status" role="status">{status}</p>}
   </main>;
 }
@@ -122,7 +94,8 @@ function Workspace({db,owner,origin}:{db:SupabaseClient;owner:string;origin:stri
     let version = 0;
     const update = () => {
       const next = ++version;
-      void activeView().then(active => { if (version === next) setView(active); });
+      void activeView().then(active => { if (version === next) setView(previous => previous && active &&
+        previous.id===active.id && previous.tabUrl===active.tabUrl && previous.title===active.title ? previous : active); });
     };
     update();
     chrome.tabs.onActivated.addListener(update);
@@ -135,175 +108,30 @@ function Workspace({db,owner,origin}:{db:SupabaseClient;owner:string;origin:stri
       chrome.windows.onFocusChanged.removeListener(update);
     };
   },[]);
-  return view ? <DocumentPanel key={`${view.id}:${view.tabUrl}`} {...{db,owner,origin,view}}/>
+  const store = useMemo(() => savedComments(db,owner),[db,owner]);
+  return view ? <ChromeDocument key={`${view.id}:${view.tabUrl}`} {...{store,origin,view}}/>
     : <p className="empty">Open a webpage or PDF to start annotating.</p>;
 }
 
-function DocumentPanel({db,owner,origin,view}:{db:SupabaseClient;owner:string;origin:string;view:View}) {
-  const [threads,setThreads] = useState<Thread[]>([]);
-  const [messages,setMessages] = useState<Message[]>([]);
-  const [missing,setMissing] = useState<string[]>([]);
-  const [status,setStatus] = useState('');
-  const [busy,setBusy] = useState(false);
-  const [draft,setDraft] = useState<{capture:Capture;page:{page_id:string;version_id:string};text:string;id:string}|null>(null);
-  const [reply,setReply] = useState<{thread:string;text:string;id:string}|null>(null);
-  const [name,setName] = useState(view.title);
-  const generation = useRef(0);
-  const refresh = useRef<()=>Promise<void>>(async () => {});
-  const scope = useRef(view);
-  scope.current = view;
-  useEffect(() => {
-    let live = true;
-    async function update() {
-      const request = ++generation.current;
+function ChromeDocument({store,origin,view}:{store:CommentStore;origin:string;view:View}) {
+  const page = useMemo<DocumentView>(() => ({
+    source:view.source,
+    title:view.title,
+    async capture() {
       try {
-        const {data:page,error} = await db.from('wc_pages').select('id').eq('source_url',view.source).maybeSingle();
-        if (error) throw error;
-        const nextThreads:Thread[] = [];
-        const nextMessages:Message[] = [];
-        if (page) {
-          const readAll = async <T,>(table:string,into:T[]) => {
-            for (let offset=0; ; offset+=500) {
-              const {data,error} = await db.from(table).select('*').eq('page_id',page.id)
-                .order('created_at').order('id').range(offset,offset+499);
-              if (error) throw error;
-              into.push(...data as T[]);
-              if (data.length < 500) break;
-            }
-          };
-          await Promise.all([readAll('wc_threads',nextThreads),readAll('wc_messages',nextMessages)]);
+        return await send<Capture>(view,view.pdf?'wc-pdf-capture':'wc-html-capture',{uploadPdf:true});
+      } catch (error) {
+        if (errorText(error).includes('Receiving end does not exist')) {
+          throw new Error('Reload the page to enable annotation, or open it in the PDF viewer.');
         }
-        if (!live || request !== generation.current) return;
-        setThreads(nextThreads); setMessages(nextMessages);
-        const unmatched = await send<string[]>(scope.current,view.pdf?'wc-pdf-highlights':'wc-html-highlights',{threads:nextThreads})
-          .catch(() => nextThreads.map(thread => thread.id));
-        if (live && request === generation.current) setMissing(unmatched ?? []);
-      } catch (error) { if (live && request === generation.current) setStatus(errorText(error)); }
-    }
-    refresh.current = update;
-    const channel = db.channel('web-comments-'+crypto.randomUUID());
-    for (const table of ['wc_pages','wc_threads','wc_messages']) {
-      channel.on('postgres_changes',{schema:'public',table,event:'*'},() => void update());
-    }
-    channel.subscribe();
-    const interval = setInterval(() => void update(),8000);
-    void update();
-    return () => {
-      live=false;
-      clearInterval(interval);
-      void db.removeChannel(channel);
-      void send(view,view.pdf?'wc-pdf-highlights':'wc-html-highlights',{threads:[]}).catch(() => {});
-    };
-  },[db,view.source,view.pdf]);
-  const answers = new Map(messages.filter(message => message.reply_to).map(message => [message.reply_to,message]));
-  const pending = messages.filter(message => message.question && !answers.has(message.id)).length;
-  async function act(fn:()=>Promise<void>) {
-    setBusy(true); setStatus('');
-    try { await fn(); } catch (error) { setStatus(errorText(error)); }
-    finally { setBusy(false); }
-  }
-  async function capture() {
-    let result:Capture;
-    try {
-      result = await send<Capture>(view,view.pdf?'wc-pdf-capture':'wc-html-capture',{uploadPdf:true});
-    } catch (error) {
-      if (errorText(error).includes('Receiving end does not exist')) {
-        throw new Error('Reload the page to enable annotation, or open it in the PDF viewer.');
+        throw error;
       }
-      throw error;
-    }
-    if (!result || result.url !== view.source) throw new Error('The document changed. Try again on the active page.');
-    setName(result.title);
-    return result;
-  }
-  async function copy(asLink:boolean) {
-    await act(async () => {
-      const snapshot = await capture();
-      const page = await saveCapture(db,owner,snapshot);
-      await navigator.clipboard.writeText(asLink ? `${origin}/p/${page.page_id}` : page.page_id);
-      setStatus((asLink ? 'Link copied.' : 'ID copied.') + (snapshot.complete ? '' : ' Capture incomplete. '+snapshot.note));
-    });
-  }
-  async function add(event:FormEvent, thread:string|null) {
-    event.preventDefault();
-    await act(async () => {
-      if (!draft && !reply) return;
-      const entry = thread ? reply! : draft!;
-      let page = draft?.page;
-      if (thread) {
-        const {data,error} = await db.from('wc_pages').select('id,latest_version').eq('source_url',view.source).single();
-        if (error) throw error;
-        page = {page_id:data.id,version_id:data.latest_version};
-      }
-      if (!page) throw new Error('Save a selection first.');
-      const {error} = await db.rpc('wc_add_message',{
-        page:page.page_id,version:page.version_id,thread,selection:thread ? null : draft?.capture.anchor,
-        message:entry.text.trim(),message_id:entry.id,
-      });
-      if (error) throw error;
-      setDraft(null);setReply(null);
-      await refresh.current();
-    });
-  }
-  return <>
-    <section className="doc">
-      <h2>{name}</h2><p className="source" title={view.source}>{new URL(view.source).hostname || 'Local PDF'}</p>
-      <div className="actions">
-        <button className="primary" disabled={busy} onClick={() => void act(async () => {
-          const snapshot = await capture();
-          if (!snapshot.anchor) throw new Error('Select up to 6,000 characters in the document first.');
-          const page = await saveCapture(db,owner,snapshot);
-          setReply(null);setDraft({capture:snapshot,page,text:'',id:crypto.randomUUID()});
-          if (!snapshot.complete) setStatus('Capture incomplete. '+snapshot.note);
-        })}>Comment on selection</button>
-        <button disabled={busy} onClick={() => void copy(true)}>Copy link</button>
-        <button disabled={busy} onClick={() => void copy(false)}>Copy ID</button>
-        {!view.pdf && <button disabled={busy} onClick={() => void chrome.tabs.update(view.id,{url:`${viewer}?url=${encodeURIComponent(view.source)}`})}>Open as PDF</button>}
-      </div>
-    </section>
-    {status && <p className="status" role="status">{status}</p>}
-    {draft && <form className="card stack" onSubmit={event => void add(event,null)}>
-      <blockquote>{draft.capture.anchor?.exact}</blockquote>
-      <label>New comment<textarea autoFocus required maxLength={12000} value={draft.text} onChange={event => setDraft({...draft,text:event.target.value})}/></label>
-      <p className="muted">Include @AI to request an answer.</p>
-      <div className="actions"><button className="primary" disabled={busy||!draft.text.trim()}>Post comment</button><button type="button" onClick={() => setDraft(null)}>Cancel</button></div>
-    </form>}
-    <div className="section-title"><h2>Threads</h2><span className="count">{pending} awaiting AI</span></div>
-    {!threads.length && <p className="empty">Select text in the document to start a thread.</p>}
-    {threads.map(thread => <article className="card stack" key={thread.id}>
-      <div className="actions">
-        <button className="quote" disabled={missing.includes(thread.id)} title="Go to selection"
-          onClick={() => void act(async () => {
-            const next = await send<string[]>(view,view.pdf?'wc-pdf-highlights':'wc-html-highlights',{threads,focus:thread.id});
-            setMissing(next);
-          })}>{thread.anchor.exact}</button>
-        {thread.resolved && <span className="count">Resolved</span>}
-      </div>
-      {missing.includes(thread.id) && <p className="warning">Selection could not be matched.</p>}
-      {messages.filter(message => message.thread_id===thread.id && message.role==='user').map(message => {
-        const answer = answers.get(message.id);
-        return <div className="message" key={message.id}>
-          <p className="message-label">You {message.question && !answer && <span className="count">Awaiting AI</span>}</p>
-          <Body text={message.body}/>
-          {answer && <div className="answer"><p className="message-label">AI reply</p><Body text={answer.body}/></div>}
-        </div>;
-      })}
-      {reply?.thread===thread.id ? <form className="stack" onSubmit={event => void add(event,thread.id)}>
-        <label>Reply<textarea autoFocus required maxLength={12000} value={reply.text} onChange={event => setReply({...reply,text:event.target.value})}/></label>
-        <div className="actions"><button className="primary" disabled={busy||!reply.text.trim()}>Post reply</button><button type="button" onClick={() => setReply(null)}>Cancel</button></div>
-      </form> : <div className="actions">
-        <button disabled={busy} onClick={() => {setDraft(null);setReply({thread:thread.id,text:'',id:crypto.randomUUID()});}}>Reply</button>
-        <button disabled={busy} onClick={() => void act(async () => {
-          const {error} = await db.rpc('wc_set_resolved',{thread:thread.id,state:!thread.resolved});
-          if (error) throw error;
-          await refresh.current();
-        })}>{thread.resolved?'Reopen':'Resolve'}</button>
-      </div>}
-    </article>)}
-  </>;
+    },
+    highlight:(threads:Thread[],focus?:string) => send<string[]>(view,
+      view.pdf?'wc-pdf-highlights':'wc-html-highlights',{threads,focus}),
+    openAsPdf:view.pdf ? undefined : () => void chrome.tabs.update(view.id,{url:`${viewer}?url=${encodeURIComponent(view.source)}`}),
+  }),[view]);
+  return <DocumentPanel store={store} shareOrigin={origin} view={page}/>;
 }
-function Body({text}:{text:string}) {
-  return <div className="markdown"><Markdown remarkPlugins={[remarkGfm,remarkMath]} rehypePlugins={[rehypeKatex]}
-    components={{img:({alt}) => <span>{alt}</span>,a:({href,children}) => <a href={href} target="_blank" rel="noreferrer">{children}</a>}}>{text}</Markdown></div>;
-}
+
 createRoot(document.getElementById('app')!).render(<App/>);

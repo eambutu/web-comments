@@ -14,7 +14,7 @@ const bundle = (entryPoints, outdir, options={}) => build({
 await Promise.all([
   bundle(['src/background.ts','src/content.ts'],'dist/extension',{format:'iife'}),
   bundle(['src/panel.tsx','src/viewer.ts'],'dist/extension',{format:'esm',define}),
-  bundle(['src/web.ts'],'dist/web/assets',{format:'esm',define}),
+  bundle(['src/web.ts','src/playground.tsx'],'dist/web/assets',{format:'esm',define}),
   bundle(['server/index.ts'],'dist',{target:'node22',platform:'node',format:'esm',packages:'external',entryNames:'server'}),
   bundle(['server/review.ts'],'dist',{target:'node22',platform:'node',format:'esm',packages:'external'}),
   cp('node_modules/pdfjs-dist/build/pdf.worker.mjs','dist/extension/pdf.worker.mjs'),
@@ -27,6 +27,7 @@ await Promise.all([
   cp('src/panel.html','dist/extension/panel.html'),
   cp('src/viewer.html','dist/extension/viewer.html'),
   cp('src/web.html','dist/web/index.html'),
+  cp('src/playground.html','dist/web/playground.html'),
   cp('src/styles.css','dist/web/assets/styles.css'),
 ]);
 

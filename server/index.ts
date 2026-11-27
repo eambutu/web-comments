@@ -1,10 +1,9 @@
 import express from 'express';
 import { fileURLToPath } from 'node:url';
 import { createClient } from '@supabase/supabase-js';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { z } from 'zod';
-import { instructions, referenceId, uuidRegex, resolvePage, readContent, readComments, postReply } from './review';
+import { createReviewServer } from './review';
 
 function env(key: string) {
   const value = process.env[key];
@@ -85,11 +84,13 @@ app.use('/assets', express.static(fileURLToPath(new URL('./web/assets/',import.m
 app.get('/downloads/chrome-extension.zip', (_req,res) => {
   res.download(fileURLToPath(new URL('./web/chrome-extension.zip',import.meta.url)),'web-comments-chrome-extension.zip');
 });
-app.get(['/oauth/consent','/signup','/p/:id','/'], (req,res) => {
+app.get(['/oauth/consent','/playground','/signup','/p/:id','/'], (req,res) => {
   if (req.path === '/signup') res.set('Cache-Control','no-store');
-  res.set('Content-Security-Policy', `default-src 'none'; script-src 'self'; style-src 'self'; connect-src ${supabaseUrl} 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`);
+  const realtime = supabaseUrl.replace(/^http(s?):/, 'ws$1:');
+  res.set('Content-Security-Policy', `default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; connect-src ${supabaseUrl} ${realtime} 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`);
   res.set('Referrer-Policy','no-referrer');
-  res.sendFile(fileURLToPath(new URL('./web/index.html',import.meta.url)));
+  const page = req.path.replace(/\/$/,'') === '/playground' ? 'playground.html' : 'index.html';
+  res.sendFile(fileURLToPath(new URL('./web/'+page,import.meta.url)));
 });
 
 app.all('/mcp', async (req,res) => {
@@ -112,37 +113,7 @@ app.all('/mcp', async (req,res) => {
     res.status(401).json({error:'A Web Comments OAuth token for the configured client is required.'});
     return;
   }
-  const server = new McpServer({name:'web-comments',version:'1.0.0'}, {instructions});
-  const id = z.string().regex(uuidRegex).transform(value => value.toLowerCase());
-  const cursor = z.number().int().min(0).max(2147483647).optional();
-  const reviewInput = {review_id:id,cursor};
-  async function run(fn: () => Promise<unknown>) {
-    try {
-      return {content:[{type:'text' as const,text:JSON.stringify(await fn())}]};
-    } catch (error) {
-      return {isError:true,content:[{type:'text' as const,text:JSON.stringify({
-        error:error instanceof Error ? error.message : 'The review could not complete this operation.',
-        instructions,
-      })}]};
-    }
-  }
-  server.registerTool('resolve_page', {
-    description:`Resolve a copied URL or page ID. ${instructions}`, inputSchema:{reference:z.string().max(2048)},
-    annotations:{readOnlyHint:true,openWorldHint:false},
-  }, ({reference}) => run(() => resolvePage(supabase,referenceId(reference,origin))));
-  server.registerTool('get_page_content', {
-    description:`Retrieve sequential chunks of the fixed document. ${instructions}`, inputSchema:reviewInput,
-    annotations:{readOnlyHint:true,openWorldHint:false},
-  }, ({review_id,cursor=0}) => run(() => readContent(supabase,review_id,cursor)));
-  server.registerTool('list_comments', {
-    description:`Retrieve sequential thread headers and message records, including pending IDs. ${instructions}`, inputSchema:reviewInput,
-    annotations:{readOnlyHint:true,openWorldHint:false},
-  }, ({review_id,cursor=0}) => run(() => readComments(supabase,review_id,cursor)));
-  server.registerTool('post_reply', {
-    description:`Save a visible reply to one pending question. ${instructions}`,
-    inputSchema:{review_id:id,comment_id:id,body:z.string().trim().min(1).max(12000)},
-    annotations:{readOnlyHint:false,destructiveHint:false,idempotentHint:true,openWorldHint:false},
-  }, ({review_id,comment_id,body}) => run(() => postReply(supabase,review_id,comment_id,body)));
+  const server = createReviewServer(supabase,origin);
   const transport = new StreamableHTTPServerTransport({sessionIdGenerator:undefined,enableJsonResponse:true});
   res.on('close', () => { void server.close(); });
   await server.connect(transport);

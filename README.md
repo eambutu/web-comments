@@ -12,6 +12,10 @@ Web Comments needs a Supabase project and a running Web Comments service. The Ch
 4. In Chrome, select text on a webpage, click **Comment on selection**, and post a question such as `@AI What is the main point of this paragraph?`
 5. Click **Copy link**, paste it into a ChatGPT conversation with the app enabled, and ask ChatGPT to answer the pending questions. Look for its reply in the same Chrome thread.
 
+## Try it in a browser
+
+Open `/playground` on the service website. **Try sample** lets you select text, comment, and preview example replies without signing in. Sample threads clear on reload. **My account** uses the same private account and commenting tools as the Chrome extension. Save a question there and use **Copy link** to try the ChatGPT workflow without installing anything.
+
 ## Set up Supabase and deploy the service
 
 1. Create a dedicated Supabase project. Apply the SQL files in `supabase/migrations/` in order through the Supabase SQL Editor or run `supabase db push --linked`. The migrations set up the database, private Storage, Realtime, and account access.
@@ -37,9 +41,7 @@ For PDFs, choose **Open as PDF** in the panel and select text on one page. If th
 
 Create one disposable annotation with an `@AI` question. In ChatGPT, enable Developer mode if your account or workspace supports it. Create a custom app using `https://YOUR-MCP-HOST/mcp`, choose OAuth and predefined client credentials, and sign in on the consent page as the same Supabase user. Use the redirect URI and authentication method shown by the setup UI. See the [ChatGPT connection instructions](https://developers.openai.com/apps-sdk/deploy/connect-chatgpt/) and [OAuth configuration](https://developers.openai.com/apps-sdk/build/auth/).
 
-Select the app in a conversation and send a request such as:
-
-> Review my Web Comments page at [copied link or ID]. Read all document and discussion chunks. Answer every pending @AI question in its thread. If anything is missing, tell me what I need to supply.
+Select Web Comments in a conversation and paste a copied page link. The app treats a link sent by itself as a request to review the whole saved page and reply to its pending `@AI` questions. Add a message if you want to narrow the review. MCP clients that expose prompts can also select **Review Web Comments** and provide the link or page ID.
 
 Verify that the app can call the three read tools and the write tool, and that the disposable reply appears beneath its question. If the app cannot be added or write calls cannot be approved, check your ChatGPT plan or workspace permissions for custom MCP apps and write tools.
 
