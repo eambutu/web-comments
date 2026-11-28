@@ -1,0 +1,68 @@
+[
+  {
+    "name": "Reward hacking propensity",
+    "url": "https://jiaxin-wen.github.io/blog/reward-hacking-propensity.html",
+    "mode": "pinned",
+    "checks": [
+      "select, post and reply",
+      "anchored card and highlight",
+      "narrow viewport",
+      "reload, open from marker and from highlighted text",
+      "resolve and reopen"
+    ],
+    "screenshots": [
+      "1-desktop.png",
+      "1-narrow.png"
+    ]
+  },
+  {
+    "name": "PEP 8",
+    "url": "https://peps.python.org/pep-0008/",
+    "mode": "pinned",
+    "checks": [
+      "select, post and reply",
+      "anchored card and highlight",
+      "narrow viewport",
+      "reload, open from marker and from highlighted text",
+      "resolve and reopen"
+    ],
+    "screenshots": [
+      "2-desktop.png",
+      "2-narrow.png"
+    ]
+  },
+  {
+    "name": "HTTP RFC 6266",
+    "url": "https://httpwg.org/specs/rfc6266.html",
+    "mode": "pinned",
+    "checks": [
+      "select, post and reply",
+      "anchored card and highlight",
+      "narrow viewport",
+      "reload, open from marker and from highlighted text",
+      "resolve and reopen"
+    ],
+    "screenshots": [
+      "3-desktop.png",
+      "3-narrow.png"
+    ]
+  },
+  {
+    "name": "Nested scroll and repeated text",
+    "url": "https://inline-eval.example.test/article",
+    "mode": "controlled",
+    "checks": [
+      "select, post and reply",
+      "anchored card and highlight",
+      "narrow viewport",
+      "reload, open from marker and from highlighted text",
+      "duplicate quote, DOM replacement, scroll clipping, missing passage",
+      "resolve and reopen",
+      "editable fields, single-page navigation"
+    ],
+    "screenshots": [
+      "4-desktop.png",
+      "4-narrow.png"
+    ]
+  }
+]
