@@ -29,7 +29,8 @@ export function inlineComments(capture:(range:Range)=>Capture) {
   shadow.adoptedStyleSheets=[sheet];
   const abort=new AbortController();
   const {signal}=abort;
-  const ticket=crypto.randomUUID();
+  // getRandomValues is also available on plain HTTP pages.
+  const ticket=Array.from(crypto.getRandomValues(new Uint8Array(16)),byte=>byte.toString(16).padStart(2,'0')).join('');
   let port:chrome.runtime.Port|undefined;
   let active:Active|null={type:'overview'};
   let pending:PageToCard={type:'overview'};
