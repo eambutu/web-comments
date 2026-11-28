@@ -23,13 +23,23 @@ The library preserves readable HTML structure or a private copy of the PDF. With
 
 In **Try sample**, select a passage, post an `@AI` comment, and click **Preview replies** to see a sample answer. Try **Open as PDF** to exercise the PDF viewer. The sample clears on reload. **My account** uses your real account and saves annotations on the sample.
 
-## Use the Chrome side panel
+## Annotate in Chrome
 
 1. Download and extract the ZIP. In Chrome 120 or later, open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select the folder containing `manifest.json`.
 2. Open Web Comments from the toolbar. Choose **Sign up** or **Sign in in browser**. The extension opens a regular browser tab that supports password-manager autofill. When sign-in completes, return to your original tab and open the panel.
 3. Select text and use the same comment controls as the library. For a PDF, choose **Open as PDF**. The viewer supports fetching the source, opening a downloaded copy for that source URL, or loading the latest saved binary. Local PDFs opened directly from a file tab require **Allow access to file URLs**. The viewer’s file picker can open a downloaded copy.
 
 Managed Chrome installations may block unpacked extensions. The web library works without extension permissions. To update an unpacked build, replace its files, click **Reload** in `chrome://extensions`, and refresh tabs that were already open.
+
+### Comment directly on a webpage
+
+With extension 1.6 or later, right-click the extension’s toolbar icon and choose **Use in-page comments**. Select a passage and click **+ Comment**. Posting opens the thread beside the passage. Click a highlight or its numbered marker to read and reply. **Comments** opens the page’s thread list, including resolved threads and passages the site has since removed.
+
+Clicking the toolbar icon toggles annotations on the current tab. The toolbar menu remembers your choice of interface. **Alt+Shift+C** toggles in-page comments directly. Chrome lets you change this shortcut at `chrome://extensions/shortcuts`. Both interfaces share your account and discussions for the same URL.
+
+This mode works on selectable text in the top-level webpage. Use the Chrome side panel and PDF viewer for PDFs. Embedded documents, canvas text and browser-internal pages have different selection or extension-access rules.
+
+Screenshots from the reward-hacking article show the thread in the margin on a wide screen and below the quote on a narrow screen. [Desktop screenshot](docs/in-page-comments/reward-desktop.png) · [Narrow screenshot](docs/in-page-comments/reward-narrow.png)
 
 ## Ask ChatGPT to review a saved page
 
@@ -69,3 +79,20 @@ Open `dist/import-previews/index.html` for the pages, screenshots, and measureme
 Run `npm run test:archive` for the browser integration test. Set `CHROMIUM_PATH` to your Chromium executable when using a system installation. It starts the built library in all three deployment modes with local account and Storage fixtures, posts a passage comment, and checks the saved view and highlight after reopening.
 
 For importer changes, keep a set of representative captures. Compare the report and screenshots for each change, and add a regression assertion when a specific structure is lost. The screenshot run checks that the browser decoded every embedded image and that each saved fragment points to a target.
+
+## Evaluate in-page comments
+
+The browser suite loads the unpacked extension into Chromium. It replays pinned copies of Jiaxin Wen’s reward-hacking article, PEP 8 and RFC 6266, then opens a test page with duplicate passages and a nested scroll area. It exercises posting, replying, reopening, resolving, layout changes and navigation. Each case produces a full-size screenshot and a narrow-viewport screenshot.
+
+```sh
+npx --no-install playwright-core install chromium
+npm run eval:inline
+```
+
+Open `dist/inline-evals/index.html` to compare the screenshots. The same directory contains `report.json` with the checks for each site. Use `--out` for a different gallery, `--browser` for an existing Chromium executable that allows unpacked extensions, and `--offline` to replay a previously populated resource cache. The In-page comments GitHub Actions workflow also publishes the gallery and an unpacked extension build.
+
+To add a site, copy an entry from [the site list](tests/inline-sites.json). Supply the page URL, a pinned source revision, the HTML and layout assets under that revision, a selector and an exact passage. An optional comment and reply make the screenshots easier to review. Pass a separate list with `npm run eval:inline -- --sites path/to/sites.json`. Replays load only the listed assets and skip publisher scripts.
+
+To try a live site with its own scripts and styles, use `npm run eval:inline -- --live --sites path/to/sites.json`. Each live entry needs only `name`, `url`, `selector` and `quote`. The browser starts with a fresh profile and sends test comments to the evaluation backend.
+
+The default run uses a disposable HTTP fixture. To exercise real Auth, Postgres and RLS, set `INLINE_EVAL_SUPABASE_URL` and `INLINE_EVAL_PUBLISHABLE_KEY` for a local Supabase instance with the repository migrations and locally auto-confirmed email signups. The runner creates a fresh account per run and accepts only loopback database URLs.

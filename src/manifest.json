@@ -1,13 +1,15 @@
 {
   "manifest_version": 3,
   "name": "Web Comments",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "minimum_chrome_version": "120",
   "description": "Private, threaded annotations on webpages and PDFs.",
-  "permissions": ["sidePanel","storage","tabs","clipboardWrite"],
+  "permissions": ["sidePanel","storage","tabs","clipboardWrite","contextMenus"],
   "host_permissions": ["http://*/*","https://*/*","file:///*"],
   "action": {"default_title":"Open Web Comments"},
   "background": {"service_worker":"background.js"},
+  "commands": {"toggle-in-page":{"suggested_key":{"default":"Alt+Shift+C"},"description":"Toggle in-page comments on this tab"}},
+  "web_accessible_resources": [{"resources":["inline.html"],"matches":["http://*/*","https://*/*"]}],
   "side_panel": {"default_path":"panel.html"},
   "content_scripts": [{
     "matches":["http://*/*","https://*/*"],

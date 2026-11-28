@@ -1,7 +1,8 @@
 import { extensionClient, type Config } from './client';
 import { authTokens, browserAuthMessage, challengePattern, extensionSignInPath } from './extension-auth';
+import { registerInlineAction } from './inline-action';
 
-void chrome.sidePanel.setPanelBehavior({openPanelOnActionClick:true});
+registerInlineAction();
 
 type PendingLogin = {origin:string;state:string;expiresAt:number};
 const loginKey = (tab:number) => 'wc-pending-login:'+tab;
@@ -52,7 +53,12 @@ async function finishLogin(message:{state?:unknown;tokens?:unknown},sender:chrom
 }
 
 chrome.runtime.onMessage.addListener((message,sender,respond) => {
-  if (message?.type==='wc-open-sign-in' && sender.url===chrome.runtime.getURL('panel.html')) {
+  const fromCard=sender.url?.split('#')[0]===chrome.runtime.getURL('inline.html') && !!sender.tab?.id && !!sender.frameId;
+  if (message?.type==='wc-inline-tab' && fromCard) {
+    respond({tabId:sender.tab!.id});
+    return;
+  }
+  if (message?.type==='wc-open-sign-in' && (sender.url===chrome.runtime.getURL('panel.html') || fromCard)) {
     void openLogin(message.signUp===true).then(()=>respond({ok:true}),()=>respond({ok:false}));
     return true;
   }

@@ -1,4 +1,4 @@
-export type HTMLAnchor = { kind:'html'; exact:string; prefix:string; suffix:string; start:number; end:number };
+export type HTMLAnchor = { kind:'html'; exact:string; prefix:string; suffix:string; start:number; end:number; occurrences?:number };
 export type PDFAnchor = { kind:'pdf'; exact:string; page:number; binaryHash:string; rects:{x:number;y:number;w:number;h:number}[] };
 export type Anchor = HTMLAnchor | PDFAnchor;
 export type Capture = {
@@ -23,6 +23,7 @@ export async function captureFingerprint(documentHash:string,capture:Pick<Captur
 }
 
 export function locate(text:string, anchor:HTMLAnchor) {
+  if (!anchor.exact) return -1;
   const positions:number[] = [];
   for (let i = text.indexOf(anchor.exact); i !== -1; i = text.indexOf(anchor.exact,i+1)) positions.push(i);
   if (positions.length < 2) return positions[0] ?? -1;

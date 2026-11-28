@@ -23,11 +23,11 @@ export function handOffSession(state:string,tokens:AuthTokens):Promise<void> {
           || event.data?.type!==browserAuthResult || event.data.state!==state) return;
       cleanup();
       if (event.data.ok===true) resolve();
-      else reject(new Error('Chrome could not finish signing in. Start again from the Web Comments side panel.'));
+      else reject(new Error('Chrome could not finish signing in. Start again from Web Comments in Chrome.'));
     }
     const timer=setTimeout(()=>{
       cleanup();
-      reject(new Error('The extension did not respond. Open a new sign-in tab from the Web Comments side panel.'));
+      reject(new Error('The extension did not respond. Open a new sign-in tab from Web Comments in Chrome.'));
     },15000);
     window.addEventListener('message',receive);
     window.postMessage({type:browserAuthMessage,state,tokens},location.origin);

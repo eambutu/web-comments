@@ -30,6 +30,9 @@ test('the extension accepts a browser sign-in only from its own pending tab, onc
     },
     chrome:{
       sidePanel:{async setPanelBehavior() {}},
+      action:{onClicked:{addListener() {}}},
+      commands:{onCommand:{addListener() {}}},
+      contextMenus:{onClicked:{addListener() {}}},
       tabs:{
         async create({url}) { assert.equal(url,'about:blank');return {id:tabId}; },
         async update(id,{url}) { assert.equal(id,tabId);opened=new URL(url); },
@@ -37,6 +40,7 @@ test('the extension accepts a browser sign-in only from its own pending tab, onc
       },
       storage:{local:storage(browserStorage),session:storage(pending)},
       runtime:{
+        onInstalled:{addListener() {}},
         getURL:()=>panel,
         onMessage:{addListener(listener) { handleMessage=listener; }},
         async sendMessage(message) { notifications.push(message.type); },

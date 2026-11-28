@@ -134,8 +134,8 @@ export function DocumentPanel({store,view,pageLink}:{store:CommentStore;view:Doc
         const answer = answers.get(message.id);
         return <div className="message" key={message.id}>
           <p className="message-label">You {message.question && !answer && <span className="count">Awaiting AI</span>}</p>
-          <Body text={message.body}/>
-          {answer && <div className="answer"><p className="message-label">{store.previewReplies ? 'Sample AI reply' : 'AI reply'}</p><Body text={answer.body}/></div>}
+          <CommentBody text={message.body}/>
+          {answer && <div className="answer"><p className="message-label">{store.previewReplies ? 'Sample AI reply' : 'AI reply'}</p><CommentBody text={answer.body}/></div>}
         </div>;
       })}
       {reply?.thread===thread.id ? <form className="stack" onSubmit={event => void add(event,thread.id)}>
@@ -151,7 +151,7 @@ export function DocumentPanel({store,view,pageLink}:{store:CommentStore;view:Doc
     </article>)}
   </>;
 }
-function Body({text}:{text:string}) {
+export function CommentBody({text}:{text:string}) {
   return <div className="markdown"><Markdown remarkPlugins={[remarkGfm,remarkMath]} rehypePlugins={[rehypeKatex]}
     components={{img:({alt}) => <span>{alt}</span>,a:({href,children}) => <a href={href} target="_blank" rel="noreferrer">{children}</a>}}>{text}</Markdown></div>;
 }

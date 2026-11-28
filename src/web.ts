@@ -30,7 +30,7 @@ function home(config:Config) {
   steps.append(
     element('li','Unzip the download. In Chrome, open chrome://extensions, turn on Developer mode, and choose Load unpacked. Select the extracted folder.'),
     element('li',preconfigured ? 'Open Web Comments from the toolbar.' : 'Open Web Comments from the toolbar and paste the server address.'),
-    element('li','Create an account or sign in from the Chrome side panel.'),
+    element('li','Create an account or sign in. To annotate beside the text, right-click the toolbar icon and choose Use in-page comments.'),
   );
   const signup = element('a','Create a private account');
   signup.href='/signup';
@@ -72,7 +72,7 @@ async function start() {
     const state=new URLSearchParams(location.hash.slice(1)).get('state');
     if (!state || !challengePattern.test(state)) {
       resetCard(element('h2','Sign in from Chrome'),
-        element('p','Open Web Comments in the Chrome side panel to start a sign-in.'));
+        element('p','Open Web Comments from the Chrome toolbar to start a sign-in.'));
       return;
     }
     const db=createClient(config.supabaseUrl,config.publishableKey,{
@@ -82,8 +82,8 @@ async function start() {
       await handOffSession(state,session);
       history.replaceState(null,'',extensionSignInPath);
       resetCard(element('h2','Signed in to Web Comments in Chrome'),
-        element('p','Return to your previous tab and open the Web Comments side panel.'));
-    }},element('p','Sign in to use Web Comments in the Chrome side panel.'));
+        element('p','Return to your original tab to annotate with Web Comments.'));
+    }},element('p','Sign in to annotate with Web Comments in Chrome.'));
     return;
   }
 

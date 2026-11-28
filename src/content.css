@@ -1,1 +1,3 @@
 ::highlight(web-comments) { background-color:#ffe18a; color:#222; }
+::highlight(web-comments-inline) { background-color:#ffdf87; color:#28221a; }
+::highlight(web-comments-inline-draft) { background-color:#fff0b4; color:#28221a; }

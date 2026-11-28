@@ -1,4 +1,5 @@
 import { alignHtmlAnchor, locate, type Capture, type HTMLAnchor, type Thread } from './model';
+import { inlineQuoteIndex } from './inline-anchors';
 
 type Span = {node:Text; start:number; end:number};
 function collect(root:HTMLElement) {
@@ -67,28 +68,33 @@ function currentAnchor(text:string, spans:Span[], range:Range|null):HTMLAnchor|n
   if (!exact.trim() || exact.length > 6000) return null;
   return {kind:'html', exact,start,end,prefix:text.slice(Math.max(0,start-100),start),suffix:text.slice(end,end+100)};
 }
-function highlight(root:HTMLElement, threads:Thread[], focus?:string,acrossLayouts=false) {
+export function htmlThreadRanges(root:HTMLElement, threads:Thread[], mode:'page'|'layout'|'inline'='page') {
   const doc=root.ownerDocument;
-  const scope=doc.defaultView!;
+  const ranges=new Map<string,Range>();
+  if (!threads.length) return ranges;
   const {text,spans} = collect(root);
-  const missing:string[] = [];
-  const ranges:Range[] = [];
+  const index=mode==='inline'?inlineQuoteIndex(text):null;
   for (const thread of threads) {
-    if (thread.anchor.kind !== 'html') { missing.push(thread.id); continue; }
-    const aligned=acrossLayouts?alignHtmlAnchor(text,thread.anchor):null;
-    const start=acrossLayouts?aligned?.start ?? -1:locate(text,thread.anchor);
+    if (thread.anchor.kind !== 'html' || !thread.anchor.exact) continue;
+    const aligned=index?index.range(thread.anchor):mode==='layout'?alignHtmlAnchor(text,thread.anchor):null;
+    const start=mode==='page'?locate(text,thread.anchor):aligned?.start ?? -1;
     const end=aligned?.end ?? start+thread.anchor.exact.length;
     const first = spans.find(span => span.start <= start && start < span.end);
     const last = spans.find(span => span.start < end && end <= span.end);
-    if (!first || !last || first.node.getRootNode() !== last.node.getRootNode()) { missing.push(thread.id); continue; }
+    if (!first || !last || first.node.getRootNode() !== last.node.getRootNode()) continue;
     const range = doc.createRange();
     range.setStart(first.node,start-first.start);
     range.setEnd(last.node,end-last.start);
-    ranges.push(range);
-    if (thread.id === focus) first.node.parentElement?.scrollIntoView({block:'center',behavior:'smooth'});
+    ranges.set(thread.id,range);
   }
-  scope.CSS.highlights.set('web-comments',new scope.Highlight(...ranges));
-  return missing;
+  return ranges;
+}
+function highlight(root:HTMLElement, threads:Thread[], focus?:string,acrossLayouts=false) {
+  const scope=root.ownerDocument.defaultView!;
+  const ranges=htmlThreadRanges(root,threads,acrossLayouts?'layout':'page');
+  if (focus) ranges.get(focus)?.startContainer.parentElement?.scrollIntoView({block:'center',behavior:'smooth'});
+  scope.CSS.highlights.set('web-comments',new scope.Highlight(...ranges.values()));
+  return threads.filter(thread=>!ranges.has(thread.id)).map(thread=>thread.id);
 }
 export function htmlDocument(root:HTMLElement, source:() => {url:string;title:string}) {
   const doc=root.ownerDocument;
@@ -109,11 +115,11 @@ export function htmlDocument(root:HTMLElement, source:() => {url:string;title:st
   }
   doc.addEventListener('selectionchange',rememberSelection);
   return {
-    capture():Capture {
+    capture(selection?:Range):Capture {
       const {text,spans,issues} = collect(root);
       const {url,title} = source();
       const selected = selectedRange();
-      const range = selected && !selected.collapsed ? selected : retained?.url === url ? retained.range : null;
+      const range = selection ?? (selected && !selected.collapsed ? selected : retained?.url === url ? retained.range : null);
       return {url,title,text,kind:'html',complete:issues.size === 0,note:[...issues].join(' '),
         anchor:currentAnchor(text,spans,range)};
     },

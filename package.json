@@ -8,7 +8,8 @@
     "start": "node dist/server.js",
     "test": "npm run build && node --test tests/*.test.mjs",
     "import:preview": "node scripts/import-preview.mjs",
-    "test:archive": "npm run build && node tests/archive-browser.mjs"
+    "test:archive": "npm run build && node tests/archive-browser.mjs",
+    "eval:inline": "npm run build && node scripts/inline-eval.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",

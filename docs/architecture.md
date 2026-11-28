@@ -1,11 +1,12 @@
 # Architecture
 
-Web Comments has three interfaces that share capture and commenting code. The Express service serves the built website and Chrome ZIP, imports public documents, and exposes the MCP endpoint. Supabase supplies email authentication, Postgres, private file storage, and Realtime.
+Web Comments shares capture and commenting code across the web library, playground and Chrome extension. Chrome offers a side panel and an in-page conversation card. The Express service serves the built website and Chrome ZIP, imports public documents, and exposes the MCP endpoint. Supabase supplies email authentication, Postgres, private file storage, and Realtime.
 
 ```mermaid
 flowchart LR
     Library[Web library]
     Extension[Chrome side panel]
+    Card[In-page conversation card]
     Playground[Playground]
     Panel[Shared document panel]
     Server[Express service]
@@ -18,6 +19,7 @@ flowchart LR
     Library -->|Public import| Server
     Server -->|Fetch and validate| Source
     Panel -->|Signed-in account| Database
+    Card -->|Same comment store and account| Database
     Server -->|User-scoped MCP calls| Database
     ChatGPT -->|OAuth bearer token| Server
 ```
@@ -60,6 +62,14 @@ The playground’s sample mode uses an in-memory store. Its account mode and the
 4. When a document opens, the panel reloads threads for that account’s source URL and restores its highlights. It refreshes on Realtime events and through a polling fallback.
 
 An HTML anchor stores the selected text, offsets, and surrounding text. On reopen, the capture engine uses the context to distinguish repeated passages. A PDF anchor stores the document’s binary hash, page number, selected text, and normalized highlight rectangles. A different PDF binary or changed HTML text can leave a thread without a matching highlight.
+
+### In-page Chrome comments
+
+`src/inline-action.ts` remembers the toolbar choice and keeps activation scoped to the selected tab and origin. `src/inline-page.ts` owns the selection button, CSS Custom Highlights, markers and positioning. The controls live in a closed shadow root outside the document body. The publisher’s text nodes stay in place as comments open and close.
+
+`src/inline.tsx` renders the conversation inside an extension-origin iframe. It uses the extension account and the same comment store as the side panel. A Chrome runtime port connects that frame to the top-level content script using a per-frame random ticket. Account tokens and message bodies stay in the extension frame. The content script receives the thread anchors needed to draw highlights.
+
+`src/inline-anchors.ts` compares quotes and surrounding text after normalizing whitespace, then maps the result back to DOM offsets. New in-page anchors also record when a quote occurs more than once. When an occurrence disappears, a strong context match is required to reattach it. Missing passages remain accessible in the thread list. The content script reindexes on DOM changes and reopens the discussion for the new URL on single-page navigation.
 
 The importer accepts public HTTP and HTTPS URLs with standard ports. It checks each redirect and resolves the hostname before connecting to a validated public address. It sends no browser credentials, and enforces a timeout, download limits, and concurrent import limits. HTML is cleaned on the server and sanitized again before browser rendering. The reader preserves document structure and reconstructs it with the app’s styles. Embedded content and scan-only PDFs can leave text extraction incomplete.
 
