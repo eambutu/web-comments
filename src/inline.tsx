@@ -20,7 +20,7 @@ function Card() {
   const port=useRef<chrome.runtime.Port|null>(null);
   const send=useMemo<Send>(()=>message=>port.current?.postMessage(message),[]);
   useEffect(()=>{
-    if (window===window.top || !/^#[a-f\d-]{36}$/.test(location.hash)) return;
+    if (window===window.top || !/^#[a-f\d]{32}$/.test(location.hash)) return;
     let live=true;
     void chrome.runtime.sendMessage({type:'wc-inline-tab'}).then(result=>{
       if (!live || !Number.isInteger(result?.tabId)) return;

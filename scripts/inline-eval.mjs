@@ -32,7 +32,7 @@ for (const item of values.live?[]:cases) {
     resources.set(index===0?item.url:new URL('/'+path,item.url).href,{body,contentType});
   }
 }
-const stress={name:'Nested scroll and repeated text',url:'https://inline-eval.example.test/article',
+const stress={name:'Nested scroll and repeated text',url:'http://inline-eval.example.test/article',
   selector:'#target',quote:'the same passage',stress:true,comment:'This comment belongs to the second occurrence.',
   reply:'Check it again after the page reflows.'};
 resources.set(stress.url,{contentType:'text/html',body:`<!doctype html><meta charset="utf-8"><title>Nested scroll evaluation</title>
