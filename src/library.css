@@ -14,8 +14,20 @@
 .library-import input { min-width:0; }
 .library-progress { margin:.2rem .15rem .7rem; color:#316457; font-weight:620; }
 .library-documents { display:grid; align-content:start; gap:.42rem; margin-top:.75rem; }
-.library-item { display:grid; grid-template-columns:2.15rem minmax(0,1fr); gap:.62rem; text-align:left; width:100%; padding:.67rem .6rem; background:transparent; border-color:transparent; color:#203c35; }
-.library-item[aria-current="page"] { background:#fff; border-color:#9fbdb0; box-shadow:0 1px 2px #284c3812; }
+.library-item-row { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:.15rem; border:1px solid transparent; border-radius:7px; }
+.library-item-row:has([aria-current="page"]) { background:#fff; border-color:#9fbdb0; box-shadow:0 1px 2px #284c3812; }
+.library-item { display:grid; grid-template-columns:2.15rem minmax(0,1fr); gap:.62rem; text-align:left; width:100%; min-height:44px; padding:.67rem .55rem; background:transparent; border:0; color:#203c35; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; touch-action:manipulation; }
+.library-source-remove { min-height:44px; min-width:44px; padding:.35rem; background:transparent; border:0; color:#536e65; font-size:.8rem; }
+.library-source-remove:hover:not(:disabled) { color:#8a3731; background:#f7eeeb; }
+.library-remove-dialog { width:min(28rem,calc(100% - 2rem)); max-height:90dvh; padding:1.25rem; border:1px solid #9fbdb0; border-radius:10px; color:#203c35; box-shadow:0 12px 48px #18382d2e; }
+.library-remove-dialog::backdrop { background:#172d2690; }
+.library-remove-dialog h2 { font-size:1.18rem; }
+#remove-source-url { margin:.3rem 0 .8rem; color:#536e65; font-size:.85rem; overflow-wrap:anywhere; }
+.library-remove-dialog .status { margin-top:.65rem; }
+.library-remove-dialog .actions { justify-content:flex-end; margin-top:1.1rem; gap:.55rem; }
+.library-remove-dialog button { min-height:44px; }
+.library-confirm-remove { background:#8a3731; color:#fff; border-color:#8a3731; }
+.library-confirm-remove:hover:not(:disabled) { background:#6d2925; }
 .library-kind { display:grid; place-items:center; width:2.1rem; height:2.1rem; border-radius:7px; background:#d3e6dc; color:#285649; font-size:.62rem; letter-spacing:.02em; font-weight:750; align-self:start; }
 .library-item-text { display:grid; gap:.16rem; min-width:0; }
 .library-item-text strong { line-height:1.35; overflow-wrap:anywhere; }

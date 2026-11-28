@@ -2,11 +2,12 @@ import React, { useEffect, useMemo, useRef, useState, type FormEvent } from 'rea
 import { createRoot } from 'react-dom/client';
 import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js';
 import { AccountForm } from './account-form';
-import { errorText, loadConfig, type Config } from './client';
+import { errorText, loadConfig, saveCapture, type Config } from './client';
 import { savedComments } from './comment-store';
 import { DocumentPanel, type DocumentView } from './document-panel';
 import { ArticleView } from './article-view';
-import { fetchSnapshot, listLibrary, loadSnapshot, saveLibrarySnapshot, type Entry, type Snapshot } from './library-data';
+import { fetchSnapshot, listLibrary, loadSnapshot, removeLibraryEntry, saveLibrarySnapshot, type Entry, type Snapshot } from './library-data';
+import { LibrarySource, RemoveSourceDialog } from './library-source';
 import type { ArticleMode } from '../shared/article-mode';
 import { SidePanel } from './side-panel';
 import './content.css';
@@ -66,14 +67,16 @@ function Workspace({db,owner,origin,mode}:{db:SupabaseClient;owner:string;origin
   const [status,setStatus]=useState('');
   const [loading,setLoading]=useState(true);
   const [showDocuments,setShowDocuments]=useState(true);
+  const [removeTarget,setRemoveTarget]=useState<Entry|null>(null);
+  const focusAfterRemoval=useRef('');
   const operation=useRef(0);
   const comments=useMemo(()=>savedComments(db,owner),[db,owner]);
   const pageLink=(id:string)=>origin+'/p/'+id;
 
-  function address(id:string) {
-    history.replaceState(null,'','/library?document='+encodeURIComponent(id));
+  function address(id?:string) {
+    history.replaceState(null,'',id?'/library?document='+encodeURIComponent(id):'/library');
   }
-  async function openEntry(entry:Entry) {
+  async function openEntry(entry:Entry,keepShelfOpen=false) {
     const current=++operation.current;
     setStatus('');
     setBusy('Opening document…');
@@ -83,7 +86,7 @@ function Workspace({db,owner,origin,mode}:{db:SupabaseClient;owner:string;origin
       setView(null);
       setOpen({key:crypto.randomUUID(),snapshot,entry});
       address(entry.id);
-      setShowDocuments(false);
+      if (!keepShelfOpen) setShowDocuments(false);
     } catch (error) {
       if (current===operation.current) setStatus(errorText(error));
     } finally {
@@ -98,10 +101,35 @@ function Workspace({db,owner,origin,mode}:{db:SupabaseClient;owner:string;origin
       const previous=new URLSearchParams(location.search).get('document');
       const entry=items.find(item=>item.id===previous) ?? items[0];
       if (entry) void openEntry(entry);
+      else if (previous) address();
     }).catch(error=>{if (live) setStatus(errorText(error));})
       .finally(()=>{if (live) setLoading(false);});
     return ()=>{live=false;operation.current++;};
   },[db,owner]);
+
+  async function removeSource(entry:Entry) {
+    const current=operation.current;
+    await removeLibraryEntry(db,owner,entry.id);
+    setEntries(items=>items.filter(item=>item.id!==entry.id));
+    setRemoveTarget(null);
+    if (current!==operation.current) return;
+    const index=entries.findIndex(item=>item.id===entry.id);
+    const next=entries[index+1] ?? entries[index-1];
+    focusAfterRemoval.current=next?'library-source-'+next.id:'import-url';
+    setStatus('');
+    if (open?.entry?.id===entry.id) {
+      setOpen(null);
+      setView(null);
+      address();
+      if (next) void openEntry(next,true);
+      else setShowDocuments(true);
+    }
+  }
+  useEffect(()=>{
+    if (busy || !focusAfterRemoval.current) return;
+    document.getElementById(focusAfterRemoval.current)?.focus();
+    focusAfterRemoval.current='';
+  },[entries,busy]);
 
   async function importLink(event:FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -149,7 +177,12 @@ function Workspace({db,owner,origin,mode}:{db:SupabaseClient;owner:string;origin
       if (capture.kind==='pdf' && capture.binaryHash && !capture.pdfPath) {
         capture={...capture,pdfBlob:undefined,pdfPath:owner+'/'+capture.binaryHash+'.pdf'};
       }
-      return saveLibrarySnapshot(db,owner,capture,snapshot).then(result=>result.page);
+      if (snapshot.kind==='html' && snapshot.saved) {
+        if (snapshot.archiveError) return Promise.resolve(snapshot.saved.page);
+        // A comment or copied link updates the review version without re-importing a removed source.
+        return saveCapture(db,owner,capture,{identity:snapshot.saved});
+      }
+      return comments.save(capture);
     }};
   },[comments,open,db,owner]);
 
@@ -166,15 +199,13 @@ function Workspace({db,owner,origin,mode}:{db:SupabaseClient;owner:string;origin
       {busy && <p className="library-progress" role="status">{busy}</p>}
       {status && <p className="status" role="alert">{status}</p>}
       <nav className="library-documents" aria-label="Library documents">
-        {entries.map(item=><button type="button" className="library-item" key={item.id}
-          aria-current={open?.entry?.id===item.id?'page':undefined} disabled={!!busy}
-          onClick={()=>void openEntry(item)}>
-          <span className="library-kind">{item.kind==='pdf'?'PDF':'HTML'}</span>
-          <span className="library-item-text"><strong>{item.title}</strong><small>{new URL(item.source).hostname}</small></span>
-        </button>)}
+        {entries.map(item=><LibrarySource key={item.id} entry={item} active={open?.entry?.id===item.id}
+          disabled={!!busy} onOpen={()=>void openEntry(item)} onRemove={()=>setRemoveTarget(item)}/>)}
         {!entries.length && !loading && <p className="empty">Imported documents will appear here.</p>}
       </nav>
     </aside>
+    {removeTarget && <RemoveSourceDialog entry={removeTarget} onCancel={()=>setRemoveTarget(null)}
+      onRemove={()=>removeSource(removeTarget)}/>}
     <main className="library-reader">
       <button type="button" className="library-mobile-documents" aria-expanded={showDocuments}
         onClick={()=>setShowDocuments(value=>!value)}>Your documents</button>

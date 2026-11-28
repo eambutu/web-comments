@@ -85,11 +85,11 @@ export async function upload(db:SupabaseClient, path:string, content:Blob) {
     if (!existing.data) throw error;
   }
 }
-export type ImportRecord={html:string|null;identity?:{contentHash:string;fingerprint:string}};
+type CaptureOptions={snapshotHtml?:string|null;identity?:{contentHash:string;fingerprint:string}};
 
-export async function saveCapture(db:SupabaseClient, owner:string, capture:Capture, record?:ImportRecord) {
-  const documentHash=record?.identity?.contentHash ?? await hash(capture.text);
-  const fingerprint=record?.identity?.fingerprint ?? await captureFingerprint(documentHash,capture,record?.html);
+export async function saveCapture(db:SupabaseClient, owner:string, capture:Capture, {snapshotHtml,identity}:CaptureOptions={}) {
+  const documentHash=identity?.contentHash ?? await hash(capture.text);
+  const fingerprint=identity?.fingerprint ?? await captureFingerprint(documentHash,capture,snapshotHtml);
   const file = new Blob([capture.text],{type:'text/plain;charset=utf-8'});
   const path = file.size > 512_000 ? `${owner}/${documentHash}.txt` : null;
   if (path) await upload(db,path,file);
@@ -98,11 +98,12 @@ export async function saveCapture(db:SupabaseClient, owner:string, capture:Captu
     pdfPath=`${owner}/${capture.binaryHash}.pdf`;
     await upload(db,pdfPath,capture.pdfBlob);
   }
-  const {data,error} = await db.rpc(record?'wc_save_import':'wc_capture',{
+  const isImport=snapshotHtml!==undefined;
+  const {data,error} = await db.rpc(isImport?'wc_save_import':'wc_capture',{
     source:capture.url,document_title:capture.title,document_kind:capture.kind,
     document_hash:documentHash,capture_fingerprint:fingerprint,is_complete:capture.complete,note:capture.note,
     document_text:path ? null : capture.text,snapshot_path:path,binary_path:pdfPath ?? null,
-    ...(record?{snapshot_html:record.html}:{}),
+    ...(isImport?{snapshot_html:snapshotHtml}:{}),
   });
   if (error) throw error;
   return data as {page_id:string;version_id:string};

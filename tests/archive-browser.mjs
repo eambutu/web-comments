@@ -7,6 +7,7 @@ import { readFile } from 'node:fs/promises';
 import { chromium } from 'playwright-core';
 import sharp from 'sharp';
 import { articleSnapshots } from '../dist/import-document.js';
+import { verifySourceRemoval } from './library-removal-browser.mjs';
 
 const url=new URL('https://publication.example/research/story');
 const source=`<html lang="en"><head><title>Field report</title>
@@ -52,7 +53,7 @@ async function verify(mode) {
     assert.match(policy,/sandbox allow-same-origin/);
 
     browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_PATH});
-    const page=await browser.newPage({viewport:{width:1440,height:960}});
+    const page=await browser.newPage({viewport:{width:1440,height:960},hasTouch:mode==='both'});
     page.setDefaultTimeout(7000);
     const owner=randomUUID(),id=randomUUID(),version=randomUUID();
     const exp=Math.floor(Date.now()/1000)+3600;
@@ -63,7 +64,7 @@ async function verify(mode) {
     await page.addInitScript(session=>localStorage.setItem('sb-127-auth-token',JSON.stringify(session)),{
       access_token:token,refresh_token:'fixture',token_type:'bearer',expires_at:exp,expires_in:3600,user,
     });
-    const storage=new Map(),threads=[],messages=[],outside=[],saved=[];
+    const storage=new Map(),library=new Map(),threads=[],messages=[],outside=[],saved=[];
     let row;
     let imports=0,downloads=0;
     let deployedMode=mode;
@@ -101,6 +102,15 @@ async function verify(mode) {
         row={page_id:id,version_id:version,owner,imported_at:new Date().toISOString(),wc_pages:{source_url:url.href},
           wc_versions:{title:capture.document_title,kind:'html',complete:capture.is_complete,extraction_note:capture.note,
             fingerprint:capture.capture_fingerprint,content_hash:capture.document_hash,inline_text:capture.document_text,text_path:capture.snapshot_path,pdf_path:null},snapshot_html:capture.snapshot_html};
+        library.set(id,row);
+        return json({page_id:id,version_id:version});
+      }
+      if (path==='/rest/v1/rpc/wc_capture') {
+        const capture=req.postDataJSON();
+        assert.equal(capture.capture_fingerprint,row.wc_versions.fingerprint);
+        assert.equal(capture.document_text,row.wc_versions.inline_text);
+        assert.ok(!('snapshot_html' in capture));
+        saved.push(capture);
         return json({page_id:id,version_id:version});
       }
       if (path==='/rest/v1/rpc/wc_add_message') {
@@ -111,8 +121,17 @@ async function verify(mode) {
         messages.push({id:input.message_id,thread_id:thread,body:input.message,role:'user',question:false});
         return json({thread_id:thread});
       }
-      if (path==='/rest/v1/wc_library') return json(row?[row]:[]);
-      if (path==='/rest/v1/wc_pages') return json(row?[{id,latest_version:version}]:[]);
+      if (path==='/rest/v1/wc_library') {
+        const target=address.searchParams.get('page_id')?.slice(3);
+        if (req.method()==='DELETE') {
+          assert.equal(address.searchParams.get('owner'),'eq.'+owner);
+          assert.ok(target);
+          library.delete(target);
+          return route.fulfill({status:204});
+        }
+        return json(target?[library.get(target)].filter(Boolean):[...library.values()]);
+      }
+      if (path==='/rest/v1/wc_pages') return json(row && address.searchParams.get('source_url')==='eq.'+url.href?[{id,latest_version:version}]:[]);
       if (path==='/rest/v1/wc_threads') return json(threads);
       if (path==='/rest/v1/wc_messages') return json(messages);
       return route.continue();
@@ -161,6 +180,7 @@ async function verify(mode) {
     assert.equal(saved[0].document_text.includes('Publisher navigation only'),mode==='archive');
     assert.equal(saved[0].document_text.slice(anchor.start,anchor.end),passage);
     assert.equal(saved[0].capture_fingerprint,saved.at(-1).capture_fingerprint);
+    assert.equal(saved.filter(capture=>'snapshot_html' in capture).length,1);
     assert.equal(storage.size,mode==='reader'?0:1);
     await page.reload();
     await comment.waitFor();
@@ -233,6 +253,16 @@ async function verify(mode) {
     await checkHighlight(page.locator('.reader-content'));
     assert.equal(imports,1);
     assert.deepEqual(outside,[]);
+    for (const title of ['Notebook','Appendix']) {
+      const entry=structuredClone(row);
+      entry.page_id=randomUUID();
+      entry.wc_versions.title=title;
+      entry.wc_pages.source_url=new URL(title,url).href;
+      library.set(entry.page_id,entry);
+    }
+    deployedMode=mode;
+    await verifySourceRemoval(page,url.href);
+    console.log('Verified sidebar source removal with mouse, touch and keyboard');
   } finally {
     await browser?.close();
     service.kill();
