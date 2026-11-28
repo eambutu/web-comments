@@ -49,7 +49,7 @@
   },
   {
     "name": "Nested scroll and repeated text",
-    "url": "https://inline-eval.example.test/article",
+    "url": "http://inline-eval.example.test/article",
     "mode": "controlled",
     "checks": [
       "select, post and reply",
