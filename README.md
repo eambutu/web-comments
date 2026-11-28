@@ -15,6 +15,8 @@ Web Comments lets you save a webpage or PDF, annotate a passage, and keep the di
 3. Select a passage in the middle and click **Comment on selection** on the right. Write a comment and click **Post comment**. Click a thread’s quotation to jump to its passage. Use **Reply** to continue the discussion or **Resolve** to close the thread.
 4. Use **Copy link** for the saved Web Comments page or **Copy ID** for its identifier. Both actions save the displayed document version. Page links and IDs require access to the account’s data.
 
+To remove a source, right-click its entry under **Your documents**, touch and hold it on a phone, or choose **Remove** beside its title. Confirm **Remove source**. Importing the same URL again brings its comments back.
+
 The library preserves readable HTML structure or a private copy of the PDF. With both layouts enabled, new HTML imports also offer **Saved layout** when the publisher’s markup, styles, fonts, and images can be bundled. Both views use the same discussion and saved passages. Open the original for video playback and interactive widgets. To add a saved layout to an older reader snapshot, import its URL again. Public import can fail when a site requires a browser login, loads the article with JavaScript, or restricts automated downloads. Use the original source link to refer back to the publisher.
 
 ## Try the playground

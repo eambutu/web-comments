@@ -11,7 +11,7 @@ export type Entry = {
   id:string;title:string;source:string;kind:'html'|'pdf';importedAt:string;
 };
 type SavedArticle={
-  page:SavedPage;contentHash:string;fingerprint:string;markup:string;text:()=>Promise<string>;
+  page:SavedPage;contentHash:string;fingerprint:string;text:()=>Promise<string>;
 };
 export type Snapshot = {
   title:string;source:string;
@@ -42,6 +42,11 @@ export async function listLibrary(db:SupabaseClient, owner:string) {
     }
     if (data.length<500) return items;
   }
+}
+
+export async function removeLibraryEntry(db:SupabaseClient,owner:string,id:string) {
+  const {error}=await db.from('wc_library').delete().eq('owner',owner).eq('page_id',id);
+  if (error) throw error;
 }
 
 // Selection offsets belong to the pinned version. Large text objects are fetched
@@ -78,7 +83,7 @@ export async function loadSnapshot(db:SupabaseClient,id:string,mode:ArticleMode)
   }
   const markup=row.snapshot_html ?? '';
   const saved={page:{page_id:id,version_id:row.version_id},contentHash:version.content_hash,
-    fingerprint:version.fingerprint,markup,text:versionText(db,row.owner,version)};
+    fingerprint:version.fingerprint,text:versionText(db,row.owner,version)};
   const snapshot:Snapshot={kind:'html',source,title:version.title,html:sanitizeArticle(markup),
     hasReader:!markup.startsWith(plainArticlePrefix),complete:version.complete,note:version.extraction_note,saved};
   const fingerprint=(digest?:string)=>captureFingerprint(saved.contentHash,snapshot,markup,digest);
@@ -113,19 +118,12 @@ export async function fetchSnapshot(db:SupabaseClient,url:string,mode:ArticleMod
 }
 
 export async function saveLibrarySnapshot(db:SupabaseClient,owner:string,capture:Capture,snapshot:Snapshot) {
-  if (snapshot.kind==='pdf') return {page:await saveCapture(db,owner,capture,{html:null}),snapshot};
-  if (snapshot.saved) {
-    const saved=snapshot.saved;
-    if (snapshot.archiveError) return {page:saved.page,snapshot};
-    const pinned={...capture,text:await saved.text(),complete:snapshot.complete,note:snapshot.note};
-    const page=await saveCapture(db,owner,pinned,{html:saved.markup,identity:saved});
-    return {page,snapshot};
-  }
+  if (snapshot.kind==='pdf') return {page:await saveCapture(db,owner,capture,{snapshotHtml:null}),snapshot};
   const contentHash=await hash(capture.text);
   const markup=snapshot.hasReader?snapshot.html:plainArticleHtml(capture.text);
   const fingerprint=await captureFingerprint(contentHash,capture,markup,snapshot.archive?.digest);
   if (snapshot.archive) await storeArchive(db,owner,fingerprint,snapshot.archive);
-  const page=await saveCapture(db,owner,capture,{html:markup,identity:{contentHash,fingerprint}});
-  const saved:SavedArticle={page,contentHash,fingerprint,markup,text:async()=>capture.text};
+  const page=await saveCapture(db,owner,capture,{snapshotHtml:markup,identity:{contentHash,fingerprint}});
+  const saved:SavedArticle={page,contentHash,fingerprint,text:async()=>capture.text};
   return {page,snapshot:{...snapshot,saved,complete:capture.complete,note:capture.note}};
 }

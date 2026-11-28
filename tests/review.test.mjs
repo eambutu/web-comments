@@ -74,6 +74,7 @@ before(async () => {
   await client.exec(await readFile(new URL('../supabase/migrations/20261126174114_web_comments_private_accounts.sql',import.meta.url),'utf8'));
   await client.exec(await readFile(new URL('../supabase/migrations/20261126174323_web_comments_username_auth_metadata.sql',import.meta.url),'utf8'));
   await client.exec(await readFile(new URL('../supabase/migrations/20261127091651_web_comments_library.sql',import.meta.url),'utf8'));
+  await client.exec(await readFile(new URL('../supabase/migrations/20261128013054_remove_library_source.sql',import.meta.url),'utf8'));
   await client.query('insert into auth.users(id) values($1),($2)',[owner,other]);
 });
 after(async () => { await client.close(); });
@@ -129,6 +130,41 @@ test('library imports keep a private snapshot pinned across later extension capt
     assert.notEqual(personal.library.page_id,snapshot.page_id);
   } finally {
     await client.exec('reset role');
+  }
+});
+
+test('only the signed-in owner can remove a library entry, and re-import restores its discussion',async () => {
+  const source='https://example.com/remove-source';
+  const body='First entry to remove';
+  const save="select wc_save_import($1,'Saved source','html',$2,$2,true,'',$3,null,null,$4) as page";
+  const args=[source,digest(body),body,'<p>'+body+'</p>'];
+  const remove='delete from wc_library where page_id=$1 returning page_id';
+  await client.exec('set role authenticated');
+  try {
+    await account(owner);
+    const {rows:[{page}]}=await db.query(save,args);
+    const message=await add(page,'Keep this note.');
+    await account(other);
+    const {rows:[otherCopy]}=await db.query(save,args);
+    assert.equal((await db.query(remove,[page.page_id])).rowCount,0);
+    await account(owner);
+    await client.query("select set_config('test.jwt',$1,false)",['{"client_id":"test"}']);
+    assert.equal((await db.query(remove,[page.page_id])).rowCount,0);
+    await client.exec("select set_config('test.jwt','{}',false)");
+
+    assert.equal((await db.query(remove,[page.page_id])).rowCount,1);
+    assert.equal((await db.query(remove,[page.page_id])).rowCount,0);
+    assert.equal((await db.query('select id from wc_versions where id=$1',[page.version_id])).rowCount,1);
+    // A capture in an already-open tab can still update the review without restoring the entry.
+    await capture(source,body);
+    assert.equal((await db.query('select page_id from wc_library where page_id=$1',[page.page_id])).rowCount,0);
+    const {rows:[restored]}=await db.query(save,args);
+    assert.equal(restored.page.page_id,page.page_id);
+    assert.equal((await db.query('select id from wc_messages where page_id=$1',[page.page_id])).rows[0].id,message.id);
+    await account(other);
+    assert.equal((await db.query('select page_id from wc_library where page_id=$1',[otherCopy.page.page_id])).rowCount,1);
+  } finally {
+    await client.exec("reset role; select set_config('test.jwt','{}',false)");
   }
 });
 
