@@ -1,0 +1,32 @@
+[
+  {
+    "name": "Reward hacking propensity",
+    "url": "https://jiaxin-wen.github.io/blog/reward-hacking-propensity.html",
+    "revision": "https://raw.githubusercontent.com/jiaxin-wen/jiaxin-wen.github.io/92858f6e0dff56b198326d92ce495b1b40d31fe9/",
+    "resources": ["blog/reward-hacking-propensity.html", "blog/figures/rh/shortcut_hill.jpg", "blog/figures/rh/fig_toy_example.png"],
+    "selector": "#tldr + p",
+    "quote": "Alignment is ultimately a generalization problem.",
+    "comment": "What would show that the model learned a shortcut it can carry to a new task?",
+    "reply": "Compare its behavior when the original shortcut disappears."
+  },
+  {
+    "name": "PEP 8",
+    "url": "https://peps.python.org/pep-0008/",
+    "revision": "https://raw.githubusercontent.com/python/peps/2730edc8440b2e13b3e07ee81291b4bffa8a0150/",
+    "resources": ["pep-0008/index.html", "_static/style.css", "_static/mq.css", "_static/pygments.css", "_static/pygments_dark.css"],
+    "selector": "#indentation p",
+    "quote": "Use 4 spaces per indentation level.",
+    "comment": "How does this apply when a function call spans several lines?",
+    "reply": "The continuation-line examples just below cover that case."
+  },
+  {
+    "name": "HTTP RFC 6266",
+    "url": "https://httpwg.org/specs/rfc6266.html",
+    "revision": "https://raw.githubusercontent.com/httpwg/httpwg.github.io/4e84bd7af11d45bc5d17b50beebf0dcc101929ca/",
+    "resources": ["specs/rfc6266.html", "assets/node_modules/bootstrap/dist/css/bootstrap.min.css", "assets/site.css"],
+    "selector": "[id='rfc.section.1.p.1'] p",
+    "quote": "RFC 2616 defines the Content-Disposition response header field",
+    "comment": "Where does this document define a valid filename parameter?",
+    "reply": "Section 4.3 covers filename and filename*."
+  }
+]

@@ -13,7 +13,7 @@ const bundle = (entryPoints, outdir, options={}) => build({
 });
 await Promise.all([
   bundle(['src/background.ts','src/content.ts'],'dist/extension',{format:'iife',define}),
-  bundle(['src/panel.tsx','src/viewer.ts'],'dist/extension',{format:'esm',define}),
+  bundle(['src/panel.tsx','src/inline.tsx','src/viewer.ts'],'dist/extension',{format:'esm',define}),
   bundle(['src/web.ts','src/playground.tsx','src/library.tsx'],'dist/web/assets',{format:'esm',define,splitting:true}),
   bundle(['server/index.ts'],'dist',{target:'node22',platform:'node',format:'esm',packages:'external',entryNames:'server'}),
   bundle(['server/review.ts','server/import-document.ts'],'dist',{target:'node22',platform:'node',format:'esm',packages:'external'}),
@@ -25,6 +25,7 @@ await Promise.all([
   cp('node_modules/katex/LICENSE','dist/extension/KATEX-LICENSE'),
   cp('src/manifest.json','dist/extension/manifest.json'),
   cp('src/panel.html','dist/extension/panel.html'),
+  cp('src/inline.html','dist/extension/inline.html'),
   cp('src/viewer.html','dist/extension/viewer.html'),
   cp('src/web.html','dist/web/index.html'),
   cp('src/playground.html','dist/web/playground.html'),
